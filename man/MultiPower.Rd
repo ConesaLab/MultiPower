@@ -8,7 +8,7 @@ MultiPower estimates the optimal sample size for a multi-omic experiment when pi
 }
 \usage{
 MultiPower(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6, averagePower = 0.85,
-fdr = 0.05, cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL)
+fdr = 0.05, alpha = 0.05, cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -34,7 +34,10 @@ The minimum power that must be achieved for each omic. It must be a vector with 
 The minimum average power that must be globally achieved. By default, averagePower = 0.85.
 }
   \item{fdr}{
-False Discovery Rate level, that is significance level after multiple testing correction, to be used. By default, fdr = 0.05.
+False Discovery Rate level to be used. It is the significance level after multiple testing correction. By default, fdr = 0.05. If no multiple testing correction is to be applied, this argument must be set to NULL and then alpha argument is required.
+}
+  \item{alpha}{
+Significance level to be used only when multiple testing correction is not to be applied (fdr = NULL). By default, alpha = 0.05.
 }
   \item{cost}{
 The cost to generate a replicate (a sample) for each omic. It must be a vector with length equal to the number of omics. If it is a single number, this same number will be used for all the omics. This argument will only be used when a different sample size per omic is allowed. By default, cost = 1 (which means that all the omics will be assumed to have the same cost).

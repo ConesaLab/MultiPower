@@ -128,7 +128,9 @@ paramEst = function (data, groups, counts = FALSE, d0 = 0.8, p1 = 0.2) {
 
 # Computing power or sample size given the rest of parameters -------------
 
-getPower = function (parameters, power = NULL, n = NULL, fdr = 0.05) {
+getPower = function (parameters, power = NULL, n = NULL, fdr = 0.05, alpha = 0.05) {
+  
+  if (is.null(fdr)) fdr = alpha*(parameters$m - parameters$m1)/(parameters$m1 + alpha*(parameters$m- parameters$m1))
   
   if (is.null(power)) { # Compute power for given n
     if (is.null(n)) stop("Please, indicate a value for either power or n arguments. \n")
@@ -176,8 +178,8 @@ getPower = function (parameters, power = NULL, n = NULL, fdr = 0.05) {
 
 # Optimal sample size -----------------------------------------------------
 
-optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0.05, cost = 1, equalSize = TRUE,
-                       max.size = 200) {
+optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0.05, alpha = 0.05, cost = 1, 
+                       equalSize = TRUE, max.size = 200) {
   
   omics = names(parameters)
   
@@ -187,12 +189,12 @@ optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0
   if (equalSize) {  ## Same sample size for all omics
     
     # Compute n for each omic
-    n1 = sapply(omics, function (oo) getPower(parameters[[oo]], power = omicPower[oo], n = NULL, fdr = fdr))
+    n1 = sapply(omics, function (oo) getPower(parameters[[oo]], power = omicPower[oo], n = NULL, fdr = fdr, alpha = alpha))
     names(n1) = omics
     
     n1max = max(n1, 2, na.rm = TRUE)
     
-    allPowers = sapply(omics, function (oo) getPower(parameters[[oo]], power = NULL, n = n1max, fdr = fdr))
+    allPowers = sapply(omics, function (oo) getPower(parameters[[oo]], power = NULL, n = n1max, fdr = fdr, alpha = alpha))
     n2 = n1max
     if (n2 > max.size) stop("Maximum size allowed has been exceed. 
                             Please, increase max.size parameter to get the optimal sample size. \n")
@@ -202,20 +204,20 @@ optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0
       n2 = n2 + 1
       if (n2 > max.size) stop("Maximum size allowed has been exceed. 
                             Please, increase max.size parameter to get the optimal sample size. \n")
-      allPowers = sapply(omics, function (oo) getPower(parameters[[oo]], power = NULL, n = n2, fdr = fdr))
+      allPowers = sapply(omics, function (oo) getPower(parameters[[oo]], power = NULL, n = n2, fdr = fdr, alpha = alpha))
     }
     
-    return(list("n0" = n1, "n" = n2, "finalPower" = allPowers, "fdr" = fdr, 
+    return(list("n0" = n1, "n" = n2, "finalPower" = allPowers, "fdr" = fdr, "alpha" = alpha,
                 "omicPower" = omicPower, "averagePower" = averagePower, "cost" = cost))
   
   } else {   ## Different sample size for each omic
-    
-    sss = optiSSnotEqual(parameters, fdr, cost, max.size, omicPower, averagePower)
+
+    sss = optiSSnotEqual(parameters, fdr, alpha, cost, max.size, omicPower, averagePower)
     n2 = as.numeric(sss$summary[,"SampleSize"])
     allPowers = as.numeric(sss$summary[,"Power"])
     names(allPowers) = names(n2) = sss$summary[,"Omic"]
     
-    return(list("n0" = NA, "n" = n2, "finalPower" = allPowers, "fdr" = fdr, 
+    return(list("n0" = NA, "n" = n2, "finalPower" = allPowers, "fdr" = fdr, "alpha" = alpha,
                 "omicPower" = omicPower, "averagePower" = averagePower, "cost" = cost))
     
   }
@@ -239,7 +241,7 @@ powerSummary = function(parameters, optimalSampleSize) {
                      "minFC" = sapply(parameters, function (x) x$minFC),
                      "meanCounts" = sapply(parameters, function (x) x$meanCounts),
                      "dispersion" = sapply(parameters, function (x) x$dispersion),
-                     "FDR" = optimalSampleSize$fdr,
+                     # "FDR" = optimalSampleSize$fdr,
                      "minPower" = optimalSampleSize$omicPower,
                      "averPower" = optimalSampleSize$averagePower,
                      "cost" = optimalSampleSize$cost,
@@ -286,7 +288,7 @@ powerPlot = function(parameters, optimalSampleSize, omicCol = NULL) {
   
   for (i in 1:nrow(yValues)) {
     for (j in 1:ncol(yValues)) {
-      yValues[i,j] = getPower(parameters[[j]], power = NULL, n = xValues[i], fdr = optimalSampleSize$fdr)
+      yValues[i,j] = getPower(parameters[[j]], power = NULL, n = xValues[i], fdr = optimalSampleSize$fdr, alpha = optimalSampleSize$alpha)
     }
   }
   
@@ -317,16 +319,19 @@ powerPlot = function(parameters, optimalSampleSize, omicCol = NULL) {
     for (j in 1:ncol(yValues2)) {
       parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
       if (!is.na(parameters2[[j]]$dispersion)) {
-        yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = optimalSampleSize$fdr)
-        matplot(xValues*100, yValues2, type = "l", lwd = 2, xlab = "Dispersion percentiles", ylab = "Statistical power",
-                main = "Power vs Dispersion", col = omicCol, lty = omicShape)
-        points(rep(75, length(parameters)), as.numeric(yValues2[as.character(c(0.75)),]), 
-               pch = 15, col = omicCol, cex = 1.2)
-        legend("bottomleft", names(parameters), lwd = 2, col = omicCol, lty = omicShape, bty = "n")
+        yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = optimalSampleSize$fdr, alpha = optimalSampleSize$alpha)
       } else {
         yValues2[i,j] = NA
       }
     }
+  }
+  
+  if (!all(is.na(yValues2))) {
+    matplot(xValues*100, yValues2, type = "l", lwd = 2, xlab = "Dispersion percentiles", ylab = "Statistical power",
+            main = "Power vs Dispersion", col = omicCol, lty = omicShape)
+    points(rep(75, length(parameters)), as.numeric(yValues2[as.character(c(0.75)),]), 
+           pch = 15, col = omicCol, cex = 1.2)
+    legend("bottomleft", names(parameters), lwd = 2, col = omicCol, lty = omicShape, bty = "n")
   }
   
   ## Data to plot
@@ -338,12 +343,64 @@ powerPlot = function(parameters, optimalSampleSize, omicCol = NULL) {
 
 
 
+PowerDispersionPlot = function(n = 5, parameters, fdr = 0.05, alpha = 0.05, omicCol = NULL) {
+  
+  if (length(n) < length(parameters)) n = rep(n[1], length(parameters))
+  
+  if (is.null(omicCol)) {
+    if (length(parameters) > 12) {
+      stop("Too many omics to be plotted. Please, select a lower number of omics to plot. \n")
+    }
+    omicCol = colors()[c(554,89,111,512,17,586,132,428,601,568,86,390)]
+    omicCol = omicCol[1:length(parameters)]
+  } 
+  
+  omicShape = 1:length(parameters)
+  names(omicCol) = names(omicShape) = names(parameters)
+  
+  ## Power vs Dispersion
+  
+  # Quantiles of dispersion
+  xValues = seq(0,1,0.05)
+  
+  # Powers
+  yValues2 = matrix(NA, ncol = length(parameters), nrow = length(xValues))
+  rownames(yValues2) = xValues
+  colnames(yValues2) = names(parameters)
+  
+  parameters2 = parameters
+  
+  optiSS = n
+
+  for (i in 1:nrow(yValues2)) {
+    for (j in 1:ncol(yValues2)) {
+      parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
+      if (!is.na(parameters2[[j]]$dispersion)) {
+        yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = fdr, alpha = alpha)
+      } else {
+        yValues2[i,j] = NA
+      }
+    }
+  }
+  
+  if (!all(is.na(yValues2))) {
+    matplot(xValues*100, yValues2, type = "l", lwd = 2, xlab = "Dispersion percentiles", ylab = "Statistical power",
+            main = "Power vs Dispersion", col = omicCol, lty = omicShape)
+    legend("bottomleft", names(parameters), lwd = 2, col = omicCol, lty = omicShape, bty = "n")
+  }
+  
+  ## Data to plot
+  return(yValues2)
+  
+}
+
+
 
 
 
 # Computing optimal sample size when it is not equal for all omics ----------------------------------------------------------
 
-optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100, 
+optiSSnotEqual = function (parameters, fdr = 0.05, alpha = 0.05, cost = 1, max.size = 100, 
                            omicPower = 0.6, averagePower = 0.8) {
   
   ##### GENERATION OF THE MATRICES OF THE PROBLEM
@@ -368,7 +425,7 @@ optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100,
       my.a = c(my.a, cost[k]*i*2)  # coefficients of objective function
       
       # power of each (omic, sample size)
-      my.power = getPower(parameters[[k]], power = NULL, n = i, fdr = fdr)
+      my.power = getPower(parameters[[k]], power = NULL, n = i, fdr = fdr, alpha = alpha)
       
       # coeff average power
       my.A4 = c(my.A4, my.power)
@@ -451,7 +508,7 @@ optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100,
 # Wrapper function: MULTIPOWER --------------------------------------------
 
 MultiPower = function(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6, averagePower = 0.85, 
-                      fdr = 0.05, cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL) {
+                      fdr = 0.05, alpha = 0.05,cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL) {
   
   if (length(p1) == 1) p1 = rep(p1, length(data))
   
@@ -461,7 +518,7 @@ MultiPower = function(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6,
   names(parameters) = names(data)
   
   cat("Computing optimal sample size... \n")
-  optimalSampleSize = optimalRep(parameters, omicPower, averagePower, fdr, cost, equalSize, max.size)
+  optimalSampleSize = optimalRep(parameters, omicPower, averagePower, fdr, alpha, cost, equalSize, max.size)
   
   resum = powerSummary(parameters, optimalSampleSize)
   
