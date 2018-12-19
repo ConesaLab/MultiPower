@@ -63,7 +63,7 @@ Sonia Tarazona; David Gómez-Cabrero
 }
 \examples{
 myomics = c("RNA-seq", "miRNA-seq",  "RRBS-seq")
-areCounts = c(TRUE, TRUE, FALSE)
+mytype = c(1, 1, 2)
 sdValue = c(2.5,3.7,0.7)  # pooled standard deviation
 p1omics = c(0.4, 0.2, 0.1) # expected proportion of DE features
 d0 = 1
@@ -73,18 +73,20 @@ M = c(12000, 500, 600000) # number of omic features
 myparam = vector("list", length = 3)  # define parameters object
 names(myparam) = myomics
 for (i in 1:length(myparam)) {
-  if (areCounts[i]) {
+  if (mytype[i] == 1) {
     disp = max((sdValue[i]^2 - meanCounts0[i]) / meanCounts0[i]^2, 0.0001)
-  } else { disp = sdValue[i] }
-  myparam[[i]] = list("counts" = areCounts[i], "allDispersions" = NULL,
-"dispersion" = disp,"p1" = p1omics[i], "d" = d0,
-"delta" = d0*sdValue[i], "minFC" = minFC0[i],
-"meanCounts" = meanCounts0[i], "m" = M[i],
-"m1" = round(M[i]*p1omics[i], 0), "alld" = NULL)
+  }
+  if (mytype[i] == 2) { disp = sdValue[i] }
+  myparam[[i]] = list("type" = mytype[i], "allDispersions" = NULL,
+                      "dispersion" = disp,"p1" = p1omics[i], "d" = d0,
+                      "delta" = d0*sdValue[i], "minFC" = minFC0[i],
+                      "meanCounts" = meanCounts0[i], "m" = M[i],
+                      "m1" = round(M[i]*p1omics[i], 0), "alld" = NULL,
+                      "dispPerc" = 75, "w" = 1)
 }
 optimalSS = optimalRep(parameters = myparam, omicPower = 0.6,
-averagePower = 0.8, fdr = 0.05, cost = 1,
-equalSize = TRUE, max.size = 30)
+averagePower = 0.8, fdr = 0.05, alpha = 0.05,
+cost = 1, equalSize = TRUE, max.size = 30)
 optimalSS$n  # optimal sample size
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the

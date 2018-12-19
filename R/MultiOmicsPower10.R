@@ -6,7 +6,8 @@
 
 ## By Sonia Tarazona and David Gómez-Cabrero
 ## 05-Oct-2017
-## Last modified 
+## Last modified: -Nov-2018
+# New alpha computations (see getPower function)
 
 
 require(RnaSeqSampleSize)
@@ -37,11 +38,18 @@ require(Rsymphony)
 
 # require(boot)
 
+geomean = function (x) exp(mean(log(x)))
+
+cohen.h = function (p) abs(2*asin(sqrt(p[1])) - 2*asin(sqrt(p[2]))) # p is a vector with two components
 
 
 # Estimating parameters needed for power calculation ----------------------
 ## Two-group comparison
-paramEst = function (data, groups, counts = FALSE, d0 = 0.8, p1 = 0.2) {
+paramEst = function (data, groups, type = 1, d0 = 0.8, p1 = 0.2, dispPerc = 75) {
+  
+  # type = 1 (counts), 2 (gaussian), 3 (binary variables: 0/1 or FALSE/TRUE)
+  
+  dispPerc = dispPerc/100
   
   # Number of features and DE features
   M = nrow(data)
@@ -50,20 +58,36 @@ paramEst = function (data, groups, counts = FALSE, d0 = 0.8, p1 = 0.2) {
   # Sample size per group
   nGroup = table(groups)
   
-  # Standard deviation per group
-  sdPerGroup = t(apply(data, 1, tapply, INDEX = groups, sd, na.rm = TRUE))
-  sdPerGroup = sdPerGroup[,names(nGroup)]
+  # Sequencing depth correction for count data
+  if (type == 1) {
+    seqdepth = colSums(data)
+    med = median(seqdepth)
+    normD = seqdepth/med
+    normDgroup = tapply(normD, INDEX = groups, geomean)
+    myW = normDgroup[2]/normDgroup[1]
+    data  = apply(data, 2, function (x) med*x/sum(x))
+  } 
   
-  # Mean per group
+  
+  # Mean per group (or p1 and p2 for binary data)
   meanPerGroup = t(apply(data, 1, tapply, INDEX = groups, mean, na.rm = TRUE))
   
-  # Pooled Standard Deviation
-  SDpooled = sqrt((nGroup[1]*sdPerGroup[,1]^2 + nGroup[2]*sdPerGroup[,2]^2)/(sum(nGroup)-2))
+  if (type != 3) {
+    
+    # Standard deviation per group
+    sdPerGroup = t(apply(data, 1, tapply, INDEX = groups, sd, na.rm = TRUE))
+    sdPerGroup = sdPerGroup[,names(nGroup)]
+    
+    # Pooled Standard Deviation
+    SDpooled = sqrt((nGroup[1]*sdPerGroup[,1]^2 + nGroup[2]*sdPerGroup[,2]^2)/(sum(nGroup)-2))
+    
+    # Cohen's d per feature
+    deltaPerFeat = abs(meanPerGroup[,1] - meanPerGroup[,2])
+    d = deltaPerFeat/SDpooled
+  } else {
+    d = apply(meanPerGroup, 1, cohen.h)
+  }
   
-  
-  # Cohen's d per feature
-  deltaPerFeat = abs(meanPerGroup[,1] - meanPerGroup[,2])
-  d = deltaPerFeat/SDpooled
   
   # DEfeat
   DEfeat = which(d >= d0)
@@ -71,53 +95,77 @@ paramEst = function (data, groups, counts = FALSE, d0 = 0.8, p1 = 0.2) {
   if (length(DEfeat)/M > 0.9) stop("More than 90% of the features are DE for d=d0. Please, increase d0 value. \n")
   
   meanPerGroup = meanPerGroup[DEfeat,]
-  sdPerGroup = sdPerGroup[DEfeat,]
-  SDpooled = SDpooled[DEfeat]
-  deltaPerFeat = deltaPerFeat[DEfeat]
+  if (type != 3) {
+    sdPerGroup = sdPerGroup[DEfeat,]
+    SDpooled = SDpooled[DEfeat]
+    deltaPerFeat = deltaPerFeat[DEfeat]
+    
+    # Intervals P70-P80
+    qqq = quantile(SDpooled, probs = c(max(0, dispPerc-0.05), min(1, dispPerc+0.05)), na.rm = TRUE)
+    seleSDpooled = intersect(which(SDpooled <= qqq[2]), which(SDpooled >= qqq[1]))
+  }
   
-  # Intervals P70-P80
-  qqq = quantile(SDpooled, probs = c(0.7,0.8), na.rm = TRUE)
-  seleSDpooled = intersect(which(SDpooled <= qqq[2]), which(SDpooled >= qqq[1]))
-  qqq = quantile(as.numeric(sdPerGroup), probs = c(0.7,0.8), na.rm = TRUE)
-  seleSdPerGroup = intersect(which(as.numeric(sdPerGroup) <= qqq[2]), which(as.numeric(sdPerGroup) >= qqq[1]))
   
-  
-  if (counts) {   ## COUNT DATA
+  if (type == 1) {   ## COUNT DATA
     cat("Parameters are to be estimated for count data \n")
     
     if(min(data, na.rm = TRUE) < 0) stop("Negative values were found. Are you sure these are count data?\n")
     
     # Fold-change estimation
-    allFC = apply(meanPerGroup, 1, function (x) max(x)/max(c(min(x),0.1)))
-    allFC = allFC[DEfeat]
-    minFC = quantile(allFC[seleSDpooled], probs = 0.25, na.rm = TRUE)
+    allFC = apply(meanPerGroup, 1, function (x) max(0.0000001, x[2]) / max(x[1], 0.0000001))
+    abslogFC =  abs(log2(allFC))
+    # minFC = quantile(allFC[seleSDpooled], probs = 1-dispPerc, na.rm = TRUE)
+    minFC = quantile(abslogFC, probs = 1-dispPerc, na.rm = TRUE)
+    minFC = which.min(abs(abslogFC - minFC))
+    minFC = allFC[minFC]
     
     # Average counts
-    meanCounts = quantile(as.numeric(meanPerGroup)[seleSdPerGroup], probs = 0.25, na.rm = TRUE)
+    # meanCounts = quantile(as.numeric(meanPerGroup[seleSDpooled,]), probs = 1-dispPerc, na.rm = TRUE)
+    meanCounts = quantile(meanPerGroup[,1], probs = 1-dispPerc, na.rm = TRUE)*normDgroup[1]
     
     # Dispersion estimation
-    allPhis = (as.numeric(sdPerGroup)^2 - as.numeric(meanPerGroup)) / as.numeric(meanPerGroup)^2
-    var75 = quantile(as.numeric(sdPerGroup), probs = 0.75, na.rm = TRUE)^2
-    maxPhi = max(0.000001, (var75 - meanCounts) / meanCounts^2)
-    
+    # allPhis = (as.numeric(sdPerGroup)^2 - as.numeric(meanPerGroup)) / as.numeric(meanPerGroup)^2
+    allPhis = ((sdPerGroup)^2 - meanPerGroup) / meanPerGroup^2
+    allPhis = apply(allPhis, 1, max)
+    maxPhi = quantile(allPhis, probs = dispPerc, na.rm = TRUE)
+    # var75 = quantile(as.numeric(sdPerGroup), probs = dispPerc, na.rm = TRUE)^2
+    # maxPhi = max(0.000001, (var75 - meanCounts) / meanCounts^2) 
+
     # Estimated parameter for count data
-    myparameters = list("counts" = counts, "allDispersions" = allPhis, "dispersion" = maxPhi,
+    myparameters = list("type" = type, "allDispersions" = allPhis, "dispersion" = maxPhi,
                         "p1" = p1, "d" = d0, "delta" = NA, "minFC" = minFC, "meanCounts" = meanCounts,
-                        "m" = M, "m1" = m1, "alld" = d)
+                        "m" = M, "m1" = m1, "alld" = d, "dispPerc" = dispPerc, "w" = myW)
     
-  } else {   ## NORMAL DATA
+  } 
+  
+  if (type == 2) {   ## NORMAL DATA
     cat("Parameters are to be estimated for normally distributed data \n")
     
     # Dispersion
-    sdValue = quantile(SDpooled, probs = 0.75, na.rm = TRUE)
+    sdValue = quantile(SDpooled, probs = dispPerc, na.rm = TRUE)
     
     # Delta estimation
-    myDelta = quantile(deltaPerFeat[seleSDpooled], probs = 0.25, na.rm = TRUE)
+    myDelta = quantile(deltaPerFeat[seleSDpooled], probs = 1-dispPerc, na.rm = TRUE)
     
     # Estimated parameters for normal data
-    myparameters = list("counts" = counts, "allDispersions" = SDpooled, "dispersion" = sdValue,
-                        "p1" = p1, "d" = d0, "delta" = myDelta, "minFC" = NA, "meanCounts" = NA,
-                        "m" = M, "m1" = m1, "alld" = d)
+    myparameters = list("type" = type, "allDispersions" = SDpooled, "dispersion" = sdValue, 
+                        "p1" = p1, "d" = d0, "delta" = round(myDelta,4), "minFC" = NA, "meanCounts" = NA,
+                        "m" = M, "m1" = m1, "alld" = d, "dispPerc" = dispPerc, "w" = NA)
+  }
+  
+  if (type == 3) {  ## BINARY DATA
+    cat("Parameters are to be estimated for binary data \n")
+    
+    # Cohen's h for DE feature
+    h = d[DEfeat]
+    qqq = quantile(h, probs = 1-dispPerc, na.rm = TRUE)
+    qqq = which.min(abs(h - qqq))
+    prop = meanPerGroup[qqq,]
+    
+    # Estimated parameters for normal data
+    myparameters = list("type" = type, "allDispersions" = NA, "dispersion" = NA, 
+                        "p1" = p1, "d" = d0, "delta" = prop, "minFC" = NA, "meanCounts" = NA,
+                        "m" = M, "m1" = m1, "alld" = d, "dispPerc" = dispPerc, "w" = NA)
   }
   
   return(myparameters)
@@ -135,34 +183,59 @@ getPower = function (parameters, power = NULL, n = NULL, fdr = 0.05, alpha = 0.0
   if (is.null(power)) { # Compute power for given n
     if (is.null(n)) stop("Please, indicate a value for either power or n arguments. \n")
     
-    if (parameters$counts) { # COUNT DATA
-      potencia = est_power(n = n, w = 1, rho = parameters$minFC, lambda0 = parameters$meanCounts, 
+    if (parameters$type == 1) { # COUNT DATA
+      potencia = est_power(n = n, w = parameters$w, rho = parameters$minFC, lambda0 = parameters$meanCounts, 
                            phi0 = parameters$dispersion, f = fdr, m = parameters$m, m1 = parameters$m1)
       
-    } else {  # NORMAL DATA
+    } 
+    
+    if (parameters$type == 2) {  # NORMAL DATA
       r1 = parameters$m1
-      myAlpha = r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr))  
+      myAlpha = min(r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr)), 0.05)  ## NEW
       potencia = power.t.test(n = n, delta = parameters$delta, sd = parameters$dispersion, 
                               sig.level = myAlpha, type = "two.sample", alternative = "two.sided")$power
+      # print(potencia); print(parameters$dispersion); print(n); print(parameters$delta); print(myAlpha)
     }
+    
+    
+    if (parameters$type == 3) {  # BINARY DATA
+      r1 = parameters$m1
+      myAlpha = min(r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr)), 0.05)  ## NEW
+      potencia = power.prop.test(n = n, p1 = parameters$delta[1], p2 = parameters$delta[2], 
+                                 sig.level = myAlpha, alternative = "two.sided")$power
+    }
+    
     
     return(potencia)
     
   } else {  # Compute n for given power
     
-    if (parameters$counts) { # COUNT DATA
+    if (parameters$type == 1) { # COUNT DATA
       tamany = sample_size(power = power, m = parameters$m, m1 = parameters$m1, f = fdr,
-                           k = 1, w = 1, rho = parameters$minFC, lambda0 = parameters$meanCounts, 
+                           k = 1, w = parameters$w, rho = parameters$minFC, lambda0 = parameters$meanCounts, 
                            phi0 = parameters$dispersion)
       
-    } else {  # NORMAL DATA
+    } 
+    
+    if (parameters$type == 2) {  # NORMAL DATA
       # Alpha estimation
       # r1 = power * parameters$m1
       r1 = parameters$m1
-      myAlpha = r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr))  
+      myAlpha = min(r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr)), 0.05)  ## NEW
       
       tamany = try(power.t.test(power = power, delta = parameters$delta, sd = parameters$dispersion, 
                             sig.level = myAlpha, type = "two.sample", alternative = "two.sided")$n, silent = TRUE)
+      if (inherits(tamany, "try-error")) tamany = 2
+    }
+    
+    
+    if (parameters$type == 3) {  # BINARY DATA
+      
+      r1 = parameters$m1
+      myAlpha = min(r1 * fdr / ((parameters$m - parameters$m1) * (1 - fdr)), 0.05)  ## NEW
+      
+      tamany = try(power.prop.test(power = power, p1 = parameters$delta[1], p2 = parameters$delta[2],
+                                   sig.level = myAlpha, alternative = "two.sided")$n, silent = TRUE)
       if (inherits(tamany, "try-error")) tamany = 2
     }
     
@@ -233,21 +306,21 @@ optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0
 # Summary of results ------------------------------------------------------
 
 powerSummary = function(parameters, optimalSampleSize) {
-  tabla = data.frame("omic" = names(parameters), "counts" = sapply(parameters, function (x) x$counts),
+  tabla = data.frame("omic" = names(parameters), "type" = sapply(parameters, function (x) x$type),
                      "numFeat" = sapply(parameters, function (x) x$m),
                      "DEperc" = sapply(parameters, function (x) x$p1),
                      "CohenD" = sapply(parameters, function (x) x$d),
-                     "delta" = sapply(parameters, function (x) x$delta),
+                     "delta" = sapply(parameters, function (x) paste(x$delta, collapse = "-")),
                      "minFC" = sapply(parameters, function (x) x$minFC),
                      "meanCounts" = sapply(parameters, function (x) x$meanCounts),
-                     "dispersion" = sapply(parameters, function (x) x$dispersion),
+                     "dispersion" = sapply(parameters, function (x) round(x$dispersion,4)),
                      # "FDR" = optimalSampleSize$fdr,
                      "minPower" = optimalSampleSize$omicPower,
                      "averPower" = optimalSampleSize$averagePower,
                      "cost" = optimalSampleSize$cost,
                      "minSampleSize" = optimalSampleSize$n0,
                      "optSampleSize" = optimalSampleSize$n,
-                     "power" = optimalSampleSize$finalPower)
+                     "power" = round(optimalSampleSize$finalPower,4))
   print(tabla)
   return(tabla)
 }
@@ -317,11 +390,15 @@ powerPlot = function(parameters, optimalSampleSize, omicCol = NULL) {
   
   for (i in 1:nrow(yValues2)) {
     for (j in 1:ncol(yValues2)) {
-      parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
-      if (!is.na(parameters2[[j]]$dispersion)) {
-        yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = optimalSampleSize$fdr, alpha = optimalSampleSize$alpha)
-      } else {
-        yValues2[i,j] = NA
+      if (parameters2[[j]]$type != 3) {  ## no dispersion plot for binary variables
+        parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
+        if (parameters2[[j]]$dispersion < 0) parameters2[[j]]$dispersion = NA
+        if (!is.na(parameters2[[j]]$dispersion)) {
+          # print(paste(i,j))
+          yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = optimalSampleSize$fdr, alpha = optimalSampleSize$alpha)
+        } else {
+          yValues2[i,j] = NA
+        }
       }
     }
   }
@@ -329,7 +406,8 @@ powerPlot = function(parameters, optimalSampleSize, omicCol = NULL) {
   if (!all(is.na(yValues2))) {
     matplot(xValues*100, yValues2, type = "l", lwd = 2, xlab = "Dispersion percentiles", ylab = "Statistical power",
             main = "Power vs Dispersion", col = omicCol, lty = omicShape)
-    points(rep(75, length(parameters)), as.numeric(yValues2[as.character(c(0.75)),]), 
+    points(rep(parameters2[[1]]$dispPerc*100, length(parameters)), 
+           as.numeric(yValues2[as.character(c(parameters2[[1]]$dispPerc)),]), 
            pch = 15, col = omicCol, cex = 1.2)
     legend("bottomleft", names(parameters), lwd = 2, col = omicCol, lty = omicShape, bty = "n")
   }
@@ -374,11 +452,13 @@ PowerDispersionPlot = function(n = 5, parameters, fdr = 0.05, alpha = 0.05, omic
 
   for (i in 1:nrow(yValues2)) {
     for (j in 1:ncol(yValues2)) {
-      parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
-      if (!is.na(parameters2[[j]]$dispersion)) {
-        yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = fdr, alpha = alpha)
-      } else {
-        yValues2[i,j] = NA
+      if (parameters2[[j]]$type != 3) {
+        parameters2[[j]]$dispersion = quantile(parameters[[j]]$allDispersions, probs = xValues[i], na.rm = TRUE)
+        if (!is.na(parameters2[[j]]$dispersion)) {
+          yValues2[i,j] = getPower(parameters2[[j]], power = NULL, n = optiSS[j], fdr = fdr, alpha = alpha)
+        } else {
+          yValues2[i,j] = NA
+        }
       }
     }
   }
@@ -403,7 +483,7 @@ PowerDispersionPlot = function(n = 5, parameters, fdr = 0.05, alpha = 0.05, omic
 optiSSnotEqual = function (parameters, fdr = 0.05, alpha = 0.05, cost = 1, max.size = 100, 
                            omicPower = 0.6, averagePower = 0.8) {
   
-  ##### GENERATION OF THE MATRICES OF THE PROBLEM
+  ##### GENERATION OF MATRICES FOR THE PROBLEM
   
   K = length(parameters)  # number of omics
   
@@ -507,14 +587,15 @@ optiSSnotEqual = function (parameters, fdr = 0.05, alpha = 0.05, cost = 1, max.s
 
 # Wrapper function: MULTIPOWER --------------------------------------------
 
-MultiPower = function(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6, averagePower = 0.85, 
-                      fdr = 0.05, alpha = 0.05,cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL) {
+MultiPower = function(data, groups, type, d0 = 0.8, p1 = 0.2, omicPower = 0.6, averagePower = 0.85, dispPerc = 75,
+                      fdr = 0.05, alpha = 0.05,cost = 1, equalSize = TRUE, max.size = 200, omicCol = NULL, powerPlots = TRUE) {
   
   if (length(p1) == 1) p1 = rep(p1, length(data))
+  if (length(d0) == 1) d0 = rep(d0, length(data))
   
   parameters = lapply(1:length(data), function (i) {
     cat(paste0("Estimating parameters for omic: ", names(data)[i], " \n")) 
-    paramEst(data[[i]], groups[[i]], counts[i], d0, p1[i])})
+    paramEst(data[[i]], groups[[i]], type[i], d0[i], p1[i], dispPerc = dispPerc)})
   names(parameters) = names(data)
   
   cat("Computing optimal sample size... \n")
@@ -522,8 +603,10 @@ MultiPower = function(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6,
   
   resum = powerSummary(parameters, optimalSampleSize)
   
-  cat("Generating power plots... \n")
-  data2plot = powerPlot(parameters, optimalSampleSize, omicCol)
+  if (powerPlots) {
+    cat("Generating power plots... \n")
+    data2plot = powerPlot(parameters, optimalSampleSize, omicCol)
+  } else { data2plot = NULL }
   
   return(list("parameters" = parameters,
               "optimalSampleSize" = optimalSampleSize,
@@ -537,11 +620,12 @@ MultiPower = function(data, groups, counts, d0 = 0.8, p1 = 0.2, omicPower = 0.6,
 
 # postMultiPower ----------------------------------------------------------
 
-postMultiPower = function(data, groups, optResults, max.size = 5, omicCol = NULL) {
+postMultiPower = function(data, groups, optResults, max.size = 5, omicCol = NULL, dispPerc = 75) {
   
   p1 = optResults$summary$DEperc
-  counts = optResults$summary$counts
-  d0 = optResults$summary$CohenD[1]
+  type = optResults$summary$type
+  d0 = unique(optResults$summary$CohenD)
+  if (length(d0) > 1) stop("Effect size (d0) must be the same for all the omics in order to use this function.")
   dmax = min(sapply(optResults$parameters, function (x) {quantile(na.omit(x$alld), probs = 0.9)}), na.rm = TRUE)
   
   if (d0 >= dmax) stop("It is not possible to increase Cohen's d to reduce sample size.")
@@ -560,8 +644,8 @@ postMultiPower = function(data, groups, optResults, max.size = 5, omicCol = NULL
   
   for (j in 2:length(lasD)) {
     
-    print(j)
-    parameters = lapply(1:length(data), function (i) paramEst(data[[i]], groups[[i]], counts[i], d0 = lasD[j], p1[i]))
+    print(paste("Cohen's d =", lasD[j]))
+    parameters = lapply(1:length(data), function (i) paramEst(data[[i]], groups[[i]], type[i], d0 = lasD[j], p1[i], dispPerc = dispPerc))
     names(parameters) = names(data)
     
     tmp = optimalRep(parameters, omicPower = optResults$summary$minPower,
@@ -638,5 +722,7 @@ postPowerPlot = function(postResults, equalSize, omicCol = NULL, max.size = 10) 
   suppressWarnings(par(mypar))
   
 }
+
+
 
 

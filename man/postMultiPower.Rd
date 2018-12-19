@@ -4,7 +4,7 @@
 Power study for different sample sizes.
 }
 \description{
-When the optimal sample size estimated by MultiPower exceeds the available budget, an alterative solution is to decrease such sample size at the cost of detecting a larger effect size (magnitude of change). This function answer the question of to which effect size users must restrict themselves for a given maximum sample size. Pilot multi-omic data sets are needed to perform this analysis.
+When the optimal sample size estimated by MultiPower exceeds the available budget, an alterative solution is to decrease such sample size at the cost of detecting a larger effect size (magnitude of change). This function answer the question of to which effect size users must restrict themselves for a given maximum sample size. Pilot multi-omic data sets are needed to perform this analysis. Binary data is not accepted and Cohen's d must have been set to the same value for all the omics.
 }
 \usage{
 postMultiPower(data, groups, optResults, max.size = 5, omicCol = NULL)
@@ -12,7 +12,7 @@ postMultiPower(data, groups, optResults, max.size = 5, omicCol = NULL)
 %- maybe also 'usage' for other objects documented here.
 \arguments{
   \item{data}{
-Data provided to \code{MultiPower} function, that is, a list with as many elements as omic data types. The names of the omics should be the names of the list. Each element in this list must be the already pre-processed and normalized data matrix of an omic data type, where rows correspond to omic features (genes, methylation sites, ChIP-seq peaks, etc.) and columns to observations (biological samples, patients, etc.).}
+Data provided to \code{MultiPower} function, that is, a List with as many elements as omic data types. The names of the omics should be the names of the list. Each element in this list must be a raw count data matrix, and in this case MultiPower will take into account the library sizes to estimate power; a normally distributed data matrix which must have been already pre-processed and normalized; or a binary data matrix (with 0/1 or TRUE/FALSE values). In any case, for each one of these matrices, rows must correspond to omic features (genes, methylation sites, ChIP-seq peaks, etc.) and columns to observations (biological samples, patients, etc.).}
   \item{groups}{
 List with as many elements as omic data types. The names of the omics should be the names of the list. Each element in this list must be a vector with length equal to the number of observations for that omic in data argument. Each element of this vector must indicate the experimental group where each observation belong. Only two experimental groups are allowed.
 }
