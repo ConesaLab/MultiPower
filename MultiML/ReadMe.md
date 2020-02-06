@@ -23,30 +23,30 @@ install.packages() function and then loaded with library().
 - plotly 
 - ggplot2
 - gridExtra
-* grid
-* ggpmisc
-*	RColorBrewer
-*	dplyr
-*	glmnet
-*	reshape2
-*	rslurm
-*	whisker
-*	randomForest
-*	caret
-*	gtable
-*	pls
+- grid
+- ggpmisc
+- RColorBrewer
+- dplyr
+- glmnet
+- reshape2
+- rslurm
+- whisker
+- randomForest
+- caret
+- gtable
+- pls
 ~~~~
 Required libraries from Bioconductor repository that must be installed following the Bioconductor instructions at:
 https://bioconductor.org/packages/release/bioc/html/RnaSeqSampleSize.html
 ~~~~
-*	mixOmics
-*	Biobase
+- mixOmics
+- Biobase
 ~~~~
 Finally, there are some basic packages that do not need to be updated but they need to be loaded:
 ~~~~
-*	parallel
-*	splines
-*	graphics
+- parallel
+- splines
+- graphics
 ~~~~
 After installing all packages, it is necessary to load them all:
 ~~~~
@@ -74,7 +74,7 @@ library("pls")
 ## Functions: ##
 A set of functions developed to perform the MultiML predictive analysis are required and it is necessary to upload them as well.
 source ("FoMPredictiveFunctions.R")
-â€ƒ
+
 Prediction of the number of samples required to reach a particular classification error rate
 
 MultiML method requires some input for each omic data type in order to compute a model to understand and predict the adequate number of samples with which the user can reach reasonably low classification errors. Utilizing Omics data results from a pilot study, the user can then extrapolate how many more samples they need to reach an acceptable error of classification.
@@ -130,7 +130,7 @@ Output:
 Summary: A table indicating the conditions of the analysis, established by the user.
 EstimatedTime: A table of the estimated time that the process will last showed in different metrics (seconds, minutes, hours, or days).
 
-â€ƒ
+
 ## Classification Error Rate calculus ##
 
 This is calculated through the ER_Calculator() function which is the main function in the MultiML method. 
@@ -159,9 +159,9 @@ ProtsRF<-ER_Calculator(Predictors=tcgadata[c(4,6)],
 Output:
 TestedTicks: A vector of the number of evaluated number of samples.
 Omics: An indicator of the Omics evaluated.
-Minimums: A list of the minimum value of error rate, balanced (BER) or not (ER) obtained per each ten-component analysis. This is measured through three distance metrics to evaluate the classification performance of the model. Maximal distance â€œmax.distâ€, distance to centroids â€œcentroids.distâ€ or Mahalanobis distance â€œmahalanobis.distâ€. Thus, each table contains the results per each iteration at different subsets of samples. 
-TablebyTick: A data frame with information related to the classification error rate obtained by tick Â± standard error of the mean â€œSEMâ€ and the characteristics of the analysis selected by the user.
-Prediction_table: A table with the information related to de predicted number of samples required to reach a particular ER Â± a margin of error â€œMOEâ€. 
+Minimums: A list of the minimum value of error rate, balanced (BER) or not (ER) obtained per each ten-component analysis. This is measured through three distance metrics to evaluate the classification performance of the model. Maximal distance "max.dist", distance to centroids "centroids.dist" or Mahalanobis distance "mahalanobis.dist". Thus, each table contains the results per each iteration at different subsets of samples. 
+TablebyTick: A data frame with information related to the classification error rate obtained by tick ± standard error of the mean "SEM" and the characteristics of the analysis selected by the user.
+Prediction_table: A table with the information related to de predicted number of samples required to reach a particular ER ± a margin of error "MOE". 
 CompWinner: A list of the number of components in which the minimum value of error rate, balanced (BER) or not (ER) was obtained per each iteration. This only applies for PLSDA module and it is measured through the three mentioned distance metrics, Maximal distance, distance to centroids or Mahalanobis distance, to evaluate the classification performance of the model.
 
 
@@ -203,11 +203,11 @@ SlurmFunction <- function (X) {
                            }
 ~~~~
 
-Then, the user can create their â€œSlurmJobâ€ using the Slurm_Creator() function.
+Then, the user can create their "SlurmJob" using the Slurm_Creator() function.
 This function creates the files to be uploaded into a cluster to calculate the results of all desired combinations of predictor datasets.
 
 Input: 
-Function: An object class â€œSlurmFunctionâ€ that will calculate the error rates.
+Function: An object class "SlurmFunction" that will calculate the error rates.
 Parameters: All required lists of datasets to be used as input for the error rate calculation. These parameters are the ones obtained in step 1.
 jobname: The desired name of the Slurm job. If NA, a random name of the form "slr####" will be assigned.
 nodes: The maximum number of nodes to be used in the cluster.
@@ -260,7 +260,7 @@ plot<-ErrorRateplot(x=ProtsRF,Projection=TRUE, Spline=TRUE,
 ~~~~
 
 Output:
-A plot of â€œnumber of samplesâ€ versus â€œclassification error rateâ€, indicating also the metric used, the Omics evaluated, and the samples required to reach a particular error rate Â± a margin of error â€œMOEâ€.
+A plot of "number of samples" versus "classification error rate", indicating also the metric used, the Omics evaluated, and the samples required to reach a particular error rate ± a margin of error "MOE".
 
  
 
@@ -294,16 +294,15 @@ Plot<- Comparative_ERPlot(L=Allplots,
                           MetricsType ="mahalanobis.dist")
 ~~~~
 Output:
-A plot of â€œnumber of samplesâ€ versus â€œclassification error rateâ€ of all different analyzes.
+A plot of "number of samples" versus "classification error rate" of all different analyzes.
 
  
 
-â€ƒ
 ## How to cite MultiML ##
 Soon in bioRxiv !! 
 
 ## References  ##
-[1] Hastie, T., James, G., Witten, D., Tibshirani, R. (2013). An Introduction to Statistical Learning. Springer. New York. pp. 316â€“321.
+[1] Hastie, T., James, G., Witten, D., Tibshirani, R. (2013). An Introduction to Statistical Learning. Springer. New York. pp. 316-321.
 
 [2] Meyer, M. C. (2008). Inference using shape-restricted regression splines. The Annals of Applied Statistics, 2(3), 1013-1033.
 
