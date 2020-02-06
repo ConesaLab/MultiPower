@@ -1609,6 +1609,7 @@ ER_Calculator<-function(Predictors, Response,Previous_CER=NULL,Ticks=5,WhichTick
   }
   })
 }
+                
 
 # END 
 
