@@ -165,7 +165,6 @@ Prediction_table: A table with the information related to de predicted number of
 CompWinner: A list of the number of components in which the minimum value of error rate, balanced (BER) or not (ER) was obtained per each iteration. This only applies for PLSDA module and it is measured through the three mentioned distance metrics, Maximal distance, distance to centroids or Mahalanobis distance, to evaluate the classification performance of the model.
 
 
-â€ƒ
 ## Elaboration of files and folder for running analyzes in a high-performance computer (HPC) ##
 
 Often, the users need to evaluate the data thoroughly, with analyzes among two or more Omics datasets, or determine if an Omics type is necessary or not for a particular study.
@@ -234,7 +233,6 @@ Step 3: Upload all four files into an HPC and run.
 Step 4: Once the job is done, download all files from the HPC.
 Step 5: Plot results.
 
-â€ƒ
 
 ## Plotting the results ##
 
@@ -261,8 +259,6 @@ plot<-ErrorRateplot(x=ProtsRF,Projection=TRUE, Spline=TRUE,
 
 Output:
 A plot of "number of samples" versus "classification error rate", indicating also the metric used, the Omics evaluated, and the samples required to reach a particular error rate ± a margin of error "MOE".
-
- 
 
  
 ### Comparative plot. ###
