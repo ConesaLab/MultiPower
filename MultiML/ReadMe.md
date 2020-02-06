@@ -23,8 +23,8 @@ install.packages() function and then loaded with library().
 - plotly 
 - ggplot2
 - gridExtra
-*	grid
-*	ggpmisc
+* grid
+* ggpmisc
 *	RColorBrewer
 *	dplyr
 *	glmnet
