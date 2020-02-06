@@ -302,4 +302,4 @@ Soon in bioRxiv !!
 
 [2] Meyer, M. C. (2008). Inference using shape-restricted regression splines. The Annals of Applied Statistics, 2(3), 1013-1033.
 
-[3] Ramsay, J. O. (1988). Monotone regression splines in action. Statistical science, 3(4), 425-441.
+[3] Ramsay, J. O. (1988). Monotone regression splines in action. Statistical science, 3(4), 425-441
