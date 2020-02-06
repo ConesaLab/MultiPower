@@ -20,9 +20,9 @@ https://leobalzano@bitbucket.org/leobalzano/multiml.git
 These are the libraries needed from the CRAN repository that can be installed with
 install.packages() function and then loaded with library().
 ~~~~
-*	plotly 
-*	ggplot2
-*	gridExtra
+-	plotly 
+-	ggplot2
+-	gridExtra
 *	grid
 *	ggpmisc
 *	RColorBrewer
