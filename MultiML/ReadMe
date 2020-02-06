@@ -1,5 +1,3 @@
-# README #
-
 # MultiML #
 
 This script was created to estimate the minimum sample size required to keep the error rate below a particular/desired threshold. 
@@ -11,7 +9,6 @@ Version: 0.1.0
 Although differential expression methods are needed to perform an initial variable selection step and hence it is key to be aware of how statistical power of such methods applied on our data can impact the results, an integrative multi-omic model is the final goal of multi-omic studies in many cases. Dimension reduction techniques or machine learning approaches are a popular choice in these cases and the biological problem to solve will determine if the selected methodology is unsupervised or supervised, and for either classification or prediction. For any of these approaches, the optimal size required to optimize the performance of the chosen method is still an open question in the field and, up to our knowledge, no tools exist to estimate sample sizes in a systematic way. On top of that, the classical definition of statistical power is not appropriate for machine learning algorithms where a significance level has to be performed a posteriori. Thus, in the particular case of supervised approaches, the performance can be measured in terms of classification or prediction error rates. 
 The MultiML method employs a multi-omic pilot data to estimate the minimum sample size required to keep the error rate below the desired threshold. This MultiML version uses Partial Least Squares-Discriminant Analysis (PLS-DA) or Random Forest classification methods to depict K subsamples of different sample sizes (nk) from the available observations, obtaining a classifier for each case, and measuring the corresponding error rate (ek). On these (nk, ek) values, a first order-smoothed penalized P-spline regression is performed to estimate the learning curve that will allow the prediction of error rates for larger sample sizes. The MultiML method was created to help userd to determine optimal sample size required for an accurate classification error rate, when using one or more Omics datasets.
 
-â€ƒ
 ## Getting Started ##
 
 The MultiML method is available in:
@@ -23,33 +20,33 @@ https://leobalzano@bitbucket.org/leobalzano/multiml.git
 These are the libraries needed from the CRAN repository that can be installed with
 install.packages() function and then loaded with library().
 ~~~~
-â€¢	plotly 
-â€¢	ggplot2
-â€¢	gridExtra
-â€¢	grid
-â€¢	ggpmisc
-â€¢	RColorBrewer
-â€¢	dplyr
-â€¢	glmnet
-â€¢	reshape2
-â€¢	rslurm
-â€¢	whisker
-â€¢	randomForest
-â€¢	caret
-â€¢	gtable
-â€¢	pls
+*	plotly 
+*	ggplot2
+*	gridExtra
+*	grid
+*	ggpmisc
+*	RColorBrewer
+*	dplyr
+*	glmnet
+*	reshape2
+*	rslurm
+*	whisker
+*	randomForest
+*	caret
+*	gtable
+*	pls
 ~~~~
 Required libraries from Bioconductor repository that must be installed following the Bioconductor instructions at:
 https://bioconductor.org/packages/release/bioc/html/RnaSeqSampleSize.html
 ~~~~
-â€¢	mixOmics
-â€¢	Biobase
+*	mixOmics
+*	Biobase
 ~~~~
 Finally, there are some basic packages that do not need to be updated but they need to be loaded:
 ~~~~
-â€¢	parallel
-â€¢	splines
-â€¢	graphics
+*	parallel
+*	splines
+*	graphics
 ~~~~
 After installing all packages, it is necessary to load them all:
 ~~~~
