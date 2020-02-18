@@ -1,0 +1,3934 @@
+{{#libPaths}}.libPaths(c('{{.}}', .libPaths()))
+{{/libPaths}}
+{{#pkgs}}library({{.}}, quietly = TRUE)
+{{/pkgs}}
+
+{{#add_obj}}
+load('add_objects.RData')
+{{/add_obj}}
+
+###########################################################
+# Functions:
+
+permutations <- function(n){
+  # Internal checkpoint function to create permutations to evaluate 
+  # if all samples included are the same, and if they are in the 
+  # same order so they can be compared across all Omics datasets
+  
+  if(n==1){
+    return(matrix(1))
+  } else {
+    sp <- permutations(n-1)
+    p <- nrow(sp)
+    A <- matrix(nrow=n*p,ncol=n)
+    for(i in 1:n){
+      A[(i-1)*p+1:p,] <- cbind(i,sp+(sp>=i))
+    }
+    return(A)
+  }
+}
+
+###########################################################
+
+g_legend <- function(a.gplot){
+  # Function to break ggplots legends and reconstruct them somewhere else
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+###########################################################
+
+CombinationsFunction <- function (OmicsData, AnalysisType="complete", levels=NULL) {
+  # Function to create the combinations of datasets to be studied
+  # Input :
+  # OmiscData: The data as list of predictor datasets including also the response (Y) matrix
+  # AnalysisType: The type of analysis, it can be 
+  #               "exploratory", where all predictors vs Y along with each dataset of predictors vs Y are evaluated
+  #               "complete", where all combinations are created or
+  #               "detailed", where the user can choose by levels indicating if two datasets vs Y or three vs Y is required
+  # levels: A vector indicating the levels to be analyzed if Analysis Type is detailed, if 2, then two predictors datasets will be contrasted against Y and so on 
+  
+  # Output:
+  # A list of two lists:
+  # Combinations: A list of the combinations required by the user to be created
+  # Data: All required lists of datasets to be used as input for the error rate analysis
+  
+  vectito<-names(OmicsData)[1:length(OmicsData)-1]
+  Combinatory<-list()
+  combita<-combitachica<-NULL
+  
+  for (factores in 1:length (vectito)) {
+    namecito<-paste(factores,"Omics", sep = " ")
+    print(namecito)
+    #print (factores)
+    Secuencia<-seq (1:factores)
+    #print (Secuencia)
+    combita<-combn(x=vectito, m=factores)
+    
+    for (om in 1:ncol(combita)){
+      namecitoChico<-paste(namecito,om, sep="")
+      #print(combita[om])
+      combitachica<-combita[,om]
+      Combinatory[namecitoChico]<-list(combitachica)
+      
+    }
+  }
+  #Combinatory
+  
+  #length(Combinatory)
+  Combinations<-list()
+  if (AnalysisType=="exploratory") {
+    Combinations<-Combinatory[c(1:length(OmicsData)-1,(length(Combinatory)))]
+    print(paste("Performing the analysis of",length(Combinations),"out of",length(Combinatory) ,"possible combinations", sep=" " ) )
+  }
+  if (AnalysisType=="complete") {
+    Combinations<-Combinatory
+    print(paste("Performing the analysis with all",length(Combinatory) ,"possible combinations", sep=" " ) )
+  }
+  if (AnalysisType=="detailed") {
+    if (is.null(levels) ) {
+      stop("If AnalysisType = detailed, you must indicate the levels")
+    }
+    #levels= c(2,3)
+    SelList<-list()
+    for (lev in 1:length(levels)) {
+      levs=levels[lev]
+      for (All in 1:length(Combinatory)) {
+        #print(All)
+        if(length(Combinatory[[All]])==levs) {
+          neiminho<-names(Combinatory[All])
+          SelList<-Combinatory[[All]]
+          Combinations[neiminho]<-list(SelList)
+        }
+      }
+    }
+    print(paste("Performing the analysis of",length(Combinations),"out of",length(Combinatory) ,"possible combinations", sep=" " ) )
+  }
+  ListofOmics<-OmicList<-list()
+  for (branch in 1:length(Combinations)) {
+    piece<-Combinations[[branch]]
+    #for (om in 1:length(piece) ) {
+    NameOmicsData<-paste0(piece, collapse = "_" )
+    OmicsData2<-OmicsData[c(piece,names(OmicsData[length(OmicsData)]) )]
+    #print(summary(OmicsData2))
+    OmicList<-list(OmicsData2)
+    ListofOmics[NameOmicsData]<-OmicList
+    #     ClassificationErrorRate(Predictors=OmicsData2,Response=length(OmicsData2),Comps = 10,crosval =crosval,Ticks = Ticks,Iterations = Iterations)
+    #}
+  }
+  res<-list(Combinations=Combinations, Data=ListofOmics)
+  return(res)
+} 
+
+###########################################################
+SlurmFunction <- function (X) {
+  # Function that will be included in the cluster for the required analysis
+  # Input: 
+  # X: A list of datasets created in "CombinationsFunction" 
+  # comps: Number of componets to be calculated after each iteration through "ClassificationErrorRate" function
+  # CrosVal: Type of cross validation to be applied in "ClassificationErrorRate" function, Leave-One-Out (LOOCV) or ten fold change (TenF) 
+  # ticks: Number of segments (groups) of samples to evaluate.
+  # iterations: Number of iterations in which error rate will be calculated
+  
+  #ClassificationErrorRate(Predictors=X,Response=length(X),Comps = 10,crosval ="LOOCV",Ticks = 10,Iterations = 15)
+  #Mimiquer(Predictors=X,Response=length(X),Comps = 10,crosval ="LOOCV",Ticks = 10,Iterations = 15)
+  #ClassificationErrorRateBeta(Predictors=X,Response=length(X),Module="RF",Comps = 10,crosval = "LOOCV",Ticks = 10,Iterations = 15)
+  ClassificationErrorRateBeta(Predictors=X,Response=length(X),Module="PLSDA",Comps = 10,crosval = "LOOCV",Ticks = 10,Iterations = 15)
+}
+
+###########################################################
+#MyRealSlurmjob <- Slurm_Creator(Function=SlurmFunction, Parameters=ExplTest$Data, jobname = 'MultiPower', nodes = 8, cpus_per_node = 2, time=15)
+Slurm_Creator<-function (Function, Parameters, jobname = NA, nodes = 2, cpus_per_node = 2, time=30,
+                         pkgs = rev(.packages()) ) 
+{
+  # Function to create the files to be uploaded into a cluster to calculate the results of all particular combinations of predictyor datasets.
+  # Input: 
+  # Function: An object class SlurmFunction that will calculate the error rates
+  # Parameters: All required lists of datasets to be used as input for the error rate calculation
+  # jobname: The desired name of the Slurm job. If NA, a random name of the form "slr####" will be assigned
+  # nodes: The maximum number of nodes to be used in the cluster.
+  # cpus_per_node: The number of CPUs per node in the cluster. It determines how many processes are run in parallel per node
+  # pkgs: A character vector containing the names of packages that must be loaded on each cluster node. By default, it includes all packages loaded by the user when slurm_apply is called.
+  # time: Time in days to run the data in the cluster
+  
+  # Output:
+  # Four elements to be uploaded into cluster:
+  # Function.RDS: A .RDS file with the Slurm Function that will be calculated
+  # Parameters.RDS: A .RDS file with all lists of datasets that will be used for the error rate calculation
+  # SlurmCreator_Run.R: A .R file with the parameters to run the job
+  # SlurmCreator_submit_sh: A .sh file that indicates all parameters that the cluster requires to preform the job
+  
+  
+  if (!is.function(Function)) {
+    stop("first argument to slurm_apply should be a function")
+  }
+  
+  # if (is.null(names(Parameters)) || !(names(Parameters) %in% names(formals(Function)))) {
+  #   stop("column names of params must match arguments of Function")
+  # }
+  if (!is.numeric(nodes) || length(nodes) != 1) {
+    stop("nodes should be a single number")
+  }
+  if (!is.numeric(cpus_per_node) || length(cpus_per_node) != 
+      1) {
+    stop("cpus_per_node should be a single number")
+  }
+  #jobname <- make_jobname(jobname)
+  tmpdir <- paste0("_rslurm_", jobname)
+  dir.create(tmpdir, showWarnings = FALSE)
+  saveRDS(Parameters, file = file.path(tmpdir, "Parameters.RDS"))
+  saveRDS(Function, file = file.path(tmpdir, "Function.RDS"))
+  if (length(Parameters) < cpus_per_node * nodes) {
+    nchunk <- cpus_per_node
+  }
+  else {
+    nchunk <- ceiling(length(Parameters)/nodes)
+  }
+  nodes <- ceiling(length(Parameters)/nchunk)
+  template_r <- readLines("templates/Slurm_run_R.txt")
+  script_r <- whisker::whisker.render(template_r, list(pkgs = pkgs, 
+                                                       nchunk = nchunk, cpus_per_node = cpus_per_node))
+  writeLines(script_r, file.path(tmpdir, "SlurmCreator_Run.R"))
+  template_sh <- readLines("templates/submit_sh.txt")
+  
+  rscript_path <- file.path(R.home("bin"), "Rscript")
+  script_sh <- whisker::whisker.render(template_sh, list(max_node = nodes - 1, 
+                                                         jobname = jobname,
+                                                         time=time,
+                                                         rscript = rscript_path))
+  writeLines(script_sh, file.path(tmpdir, "SlurmCreator_submit_sh"))
+  slurm_job(jobname, nodes)
+}
+
+
+###########################################################
+ClassificationErrorRate<- function (Predictors, Response=length(Predictors),Function=Random.Forest.MP,Comps=10,crosval = "LOOCV",Ticks=10,WhichTicks=NULL,ERIterations=15,LassoIterations=15,ErrorRateType="ER",...) {
+  # Function to evaluate through Error rate the predictive capability of the Multipower package
+  # Input: 
+  # Predictors: A list of different Omics Datasets and the Response matrix
+  # Response: A number indicating the response matrix included in Predictors
+  # Comps: Number of componets to be calculated after each iteration
+  # crosval: Type of cross validation to be applied, Leave-One-Out (LOOCV) or ten fold change (TenF)
+  # Ticks: Number of segments (groups) of samples to evaluate.
+  # ERIterations: Number of iterations in which ER will be calculated
+  # LassoIterations: Number of iterations of the Lasso selection per each Error rate analysis
+  
+  # Output:
+  # Omics: A vector of the evaluated Omics
+  # A list of two lists:
+  # Minimums: A list of the minimum value of error rate, balanced (BER) or not (ER) obtained per each ten
+  #           component analysis. This is measured through three distance metrics to evaluate the 
+  #           classification performance of the model. Maximal distance (max.dist), distance to 
+  #           centroids (centroids) or Mahalanobis distance (Mahalanobis)
+  #           Thus, each table contains the results per each iteration at different subsets of samples
+  
+  # CompWinner: A list of the number of components in which the minimum value of error rate, 
+  #             balanced (BER) or not (ER) was obtainde per each iteration. This is measured through 
+  #             the three mentioned distance metrics to evaluate the classification performance 
+  #             of the model. Thus, each table contains the components per each iteration at different 
+  #             subsets of samples
+  
+  ##########
+  #cl<-match.call(expand.dots = TRUE)
+  
+  components=Comps
+  #print(components)
+  if (! is.list(Predictors) ) {
+    stop("\\nOmics dataset must be a list with at least two elements")
+  }
+  ###########
+  # Y
+  Y<-t(as.matrix(Predictors[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  if (ncol(Y) != 1) {
+    stop("\\nResponse must be a single variable")
+  }
+  if (any(is.na(Y))) {
+    stop("\\nResponse must not contain missing values")
+  }
+  if (is.null(colnames(Y))) {
+    colnames(Y) = "Y"
+  }
+  if (is.null(rownames(Y))) {
+    rownames(Y) = 1:n
+  }
+  
+  # Step1: Match the sample size
+  LosIndivs<- rownames(Y)
+  for (i in 1:length(Predictors)){
+    LosIndivs = intersect(LosIndivs, colnames(Predictors[[i]]))
+  }
+  #LosIndivs
+  print(paste("This analysis will be performed with",length(LosIndivs),"samples, since those are the ones repeated in all layers"))
+  
+  NewList<-Predictors
+  
+  #summary(NewList)
+  #rm(Predictors)
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,colnames(NewList[[i]]) %in% LosIndivs]
+  }
+  #sapply(Predictors, dim)
+  #sapply(NewList, dim)
+  
+  ###########
+  # Step2: Match the order
+  LosColnames<-colnames(NewList[[1]])
+  
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,sort(LosColnames) ]
+  }
+  #sapply(NewList, dim)
+  
+  TestdeMatchTable<-unique(matrix(permutations(length(NewList)),ncol=2))
+  
+  for (i in 1:nrow(TestdeMatchTable)) {
+    a=TestdeMatchTable[i,1]
+    b=TestdeMatchTable[i,2]
+    
+    if (all(colnames(NewList[[a]])==colnames(NewList[[b]]))){
+      print(paste("Columns of lists",a,"and",b,"are equally sorted"))
+    } else{
+      print("The colnames are not equally sorted")
+    }
+  }
+  if (crosval=="LOOCV"){
+    valid="loo"
+  }
+  if (crosval=="TenF"){
+    valid="Mfold"
+  }
+  
+  # Y
+  Y<-t(as.matrix(NewList[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  
+  #########
+  Omics<-data.frame(Omics=names(NewList[-Response]))
+  
+  MinN<-round(length(table(as.factor(Y[,1]))) * 2, digits = 0)
+  MaxN<-nrow(Y)
+  Ngroups<-length(table(as.factor(Y[,1])))
+  if(!is.null(Ticks)) {
+    vectTicks<-round(seq(from=MinN,to = MaxN,length.out = Ticks),digits = 0)
+  } else {
+    if (is.null(WhichTicks)) {
+      print("Please insert which ticks you want to calculate")
+    } else {
+    vectTicks<-WhichTicks
+    }
+  }
+  muestra<-seq(1:length(vectTicks))
+  
+  muestrita<-muestritaLASSO<-NULL
+  Muestra<-muestrasas<-list()
+  MuestraLASSO<-muestrasasLASSO<-list()
+  Minimums<-minimossas<-list()
+  winnerSas<-CompWinner<-list()
+  
+  for (i in 1:length(vectTicks)) {
+    
+    print(paste("Tick",i))
+    
+    Mins<-ComponentWinner<-preMins<-NULL
+    Minsbigrfc<-NULL
+    TableMins<-NULL
+    
+    for (iter in 1:ERIterations){
+      iter=iter
+      print(paste("performing iteration ",iter," of tick ",i,sep=""))
+      #preMins<-NULL
+      print(paste("Tick ",i,": ", vectTicks[i], " samples", sep = ""))
+      namecito<-paste(vectTicks[i], " samples", sep = "")
+      resample <- TRUE
+      index <- rownames(Y)
+      fun <- function(x) sample(x, round((vectTicks[i])/Ngroups,digits=0), replace = resample)
+      a <- aggregate(index, by = list(group = Y[,1]), FUN = fun )
+      a<-a[,-1]
+      aLASSO<-aggregate(index, by = list(group = Y[,1]), FUN = fun )
+      aLASSO<-aLASSO[,-1]
+      Premuestrita<-as.vector(unlist(a))
+      PremuestritaLASSO<-as.vector(unlist(aLASSO))
+      if(vectTicks[i]>=length(Premuestrita)){
+        muestrita<-c(Premuestrita,sample(rownames(Y), size=vectTicks[i]-length(Premuestrita), replace = TRUE))
+        muestritaLASSO<-c(PremuestritaLASSO,sample(rownames(Y), size=vectTicks[i]-length(PremuestritaLASSO), replace = TRUE))
+      } else{
+        muestrita<-Premuestrita[1:(length(Premuestrita)-(length(Premuestrita)-vectTicks[i]))]
+        muestritaLASSO<-PremuestritaLASSO[1:(length(PremuestritaLASSO)-(length(PremuestritaLASSO)-vectTicks[i]))]
+      }
+      muestrasas<-list(muestrita)
+      muestrasasLASSO<-list(muestritaLASSO)
+      Muestra[namecito]<-muestrasas
+      MuestraLASSO[namecito]<-muestrasasLASSO
+      #####
+      Xchica2<-NewList
+      Xchica2LASSO<-NewList
+      #rm(NewList)
+      # Matching the order again
+      LasMuestras<-Muestra[[i]]
+      LasMuestrasLASSO<-MuestraLASSO[[i]]
+      # Sorting the tables
+      for (long in 1:length(Xchica2)) {
+        Xchica2[[long]]<-Xchica2[[long]][,sort(LasMuestras) ]
+      }
+      for (long2 in 1:length(Xchica2LASSO)) {
+        Xchica2LASSO[[long2]]<-Xchica2LASSO[[long2]][,sort(LasMuestrasLASSO) ]
+      }
+      #sapply(Xchica2, dim)
+      #sapply(Xchica2LASSO, dim)
+      TestdeMatchTable<-unique(matrix(permutations(length(Xchica2)),ncol=2))
+      for (lulu in 1:nrow(TestdeMatchTable)) {
+        cola=TestdeMatchTable[lulu,1]
+        colb=TestdeMatchTable[lulu,2]
+        
+        if (all(colnames(Xchica2[[cola]])==colnames(Xchica2[[colb]]))){
+          #print(paste("Columns of lists",cola,"and",colb,"are equally sorted"))
+        } else{
+          print("Columns of lists",cola,"and",colb,"are NOT equally sorted")
+        }
+      }
+      
+      TestdeMatchTableLASSO<-unique(matrix(permutations(length(Xchica2LASSO)),ncol=2))
+      for (lulu in 1:nrow(TestdeMatchTableLASSO)) {
+        cola=TestdeMatchTableLASSO[lulu,1]
+        colb=TestdeMatchTableLASSO[lulu,2]
+        
+        if (all(colnames(Xchica2LASSO[[cola]])==colnames(Xchica2LASSO[[colb]]))){
+          #print(paste("Columns of lists",cola,"and",colb,"are equally sorted"))
+        } else{
+          print("Columns of lists",cola,"and",colb,"are NOT equally sorted")
+        }
+      }
+      #
+      
+      for (ii in 1:length(Xchica2)) {
+        Xchica2[[ii]]<-Xchica2[[ii]][,Muestra[[i]] %in% colnames(Xchica2[[ii]])]
+      }
+      for (ii in 1:length(Xchica2LASSO)) {
+        Xchica2LASSO[[ii]]<-Xchica2LASSO[[ii]][,MuestraLASSO[[i]] %in% colnames(Xchica2LASSO[[ii]])]
+      }
+      #sapply(Xchica2,dim)
+      #sapply(Xchica2LASSO,dim)
+      ####
+      Xchica<-Xchica2[-Response]
+      Ychica<-as.matrix(Xchica2[[Response]])
+      rm(Xchica2)
+      if (is.character(Ychica[1,])) {
+        Ycita<-as.numeric(as.factor(c(Ychica)))
+        Ychica<-rbind(Ychica,as.numeric(Ycita))
+      }
+      for (lili in 1:length(Xchica)) {
+        Xchica[[lili]]<-t(Xchica[[lili]])
+      }
+      
+      XchicaLASSO<-Xchica2LASSO[-Response]
+      YchicaLASSO<-as.matrix(Xchica2LASSO[[Response]])
+      rm(Xchica2LASSO)
+      if (is.character(YchicaLASSO[1,])) {
+        Ycita2<-as.numeric(as.factor(c(YchicaLASSO)))
+        YchicaLASSO<-rbind(YchicaLASSO,as.numeric(Ycita2))
+      }
+      for (lili in 1:length(XchicaLASSO)) {
+        XchicaLASSO[[lili]]<-t(XchicaLASSO[[lili]])
+      }
+      ##### Here is the beginning of the module #####
+      
+      PreRes<-operator (X=Xchica,Y=Ychica,XLasso=XchicaLASSO, YLasso=YchicaLASSO, LassoIterations=LassoIterations, FUN=Function,Comps = components)
+      
+      if (length(PreRes)>1){
+        Mins<-as.matrix(cbind(Mins,PreRes$preMins))
+        ComponentWinner<-cbind(ComponentWinner,PreRes$ComponentWinner2)
+        #ComponentWinner2<-ComponentWinner
+        class(ComponentWinner)<-"numeric"  
+      } else {
+        Mins<-cbind(Mins,PreRes)  
+      }
+    } # Cierre de la iteracion iter
+    nameSample<-paste(vectTicks[i], " samples", sep = "")
+    if (dim(Mins)[1]==1){
+      colnames(Mins)<-paste0("iter",seq(1:ERIterations));rownames(Mins)<-"OOB_ER"
+      
+    }
+    minimossas<-list(Mins)
+    Minimums[nameSample]<-minimossas
+    winnerSas<-list(ComponentWinner)
+    CompWinner[nameSample]<-winnerSas
+  }
+  ##### END of for (i in 1:length(vectTicks))
+  ListofMins<-Minimums
+  SDsas<-StdDev<-list()
+  for(lista in 1:length(ListofMins)){
+    Table<-ListofMins[[lista]]
+    SDtita<-SDTota<-NULL
+    for (row in 1:nrow(Table)){
+      #SDtita<-sd(Table[row,])
+      SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+      SDTota<-rbind(SDTota,SDtita)
+    }
+    #SDTota
+    rownames(SDTota)<-rownames(ListofMins[[1]])
+    nameList<-names(ListofMins[lista])
+    SDsas<-list(SDTota)
+    StdDev[nameList]<-SDsas
+    
+  }
+  ###
+  PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+  rownames(PreSDstable)<-rownames(StdDev[[1]])
+  colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[1,])[,1]
+  
+  for (iiiii in 1: length(StdDev)) {
+    PreSDstable[,iiiii]<-rowMeans(StdDev[[iiiii]])
+  }
+  
+  ###
+  Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+  rownames(Premeanstable)<-rownames(ListofMins[[1]])
+  #colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+  colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[1,])[,1]
+  
+  for (i in 1: length(ListofMins)) {
+    Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+  }
+  
+  ListofComps<-CompWinner
+  if (is.null(ListofComps[[1]]) ){
+    PreCompstable<-NULL
+  } else {
+    ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+    for (i in 1: length(ListofComps)) {
+      ToNumListofComps2<-ListofComps[[i]]
+      class(ToNumListofComps2) <- "numeric"
+      for (row in 1:nrow(ToNumListofComps2)){
+        PreCompstabletita<-rowMedians(ToNumListofComps2)
+      }
+      PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+    }
+    rownames(PreCompstable)<-rownames(ListofComps[[1]])
+    colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[1,])[,1]
+    #PreCompstable
+    PreCompstable<-as.data.frame(PreCompstable)
+  }
+  
+  # if (dim(Premeanstable)[1]==1){
+  #   if (ErrorRateType=="BER"){
+  #     print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+  #     MeansTable2<-Premeanstable
+  #     SDstable2<-PreSDstable
+  #     Compstable2<-NULL
+  #   } else if (ErrorRateType=="ER") {
+  #     MeansTable2<-Premeanstable
+  #     SDstable2<-PreSDstable
+  #     Compstable2<-NULL
+  #   } else if (ErrorRateType=="Both") {
+  #     print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+  #     MeansTable2<-Premeanstable
+  #     SDstable2<-PreSDstable
+  #     Compstable2<-NULL
+  #   }
+  # } else{
+  MeansTable2<-Premeanstable
+  SDstable2<-PreSDstable
+  Compstable2<-PreCompstable
+  #}
+  MeansTable2$Category <- rownames(MeansTable2)
+  SDstable2$Category <- rownames(SDstable2)
+  Compstable2$Category <- rownames(Compstable2)
+  meltedMeans<-melt(MeansTable2, id.vars="Category")
+  meltedSDs<-melt(SDstable2, id.vars="Category")
+  colnames(meltedSDs)[3]<-"StdDev"
+  if (is.null(Compstable2) ){
+    meltedComps<-NULL
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+  } else {
+    meltedComps<-melt(Compstable2, id.vars="Category")
+    colnames(meltedComps)[3]<-"Comp"
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+  }
+  
+  
+  if (!is.null(Ticks)) { #print ("yes") }
+    seqdeTicks<-as.numeric(as.character(unique(allmelted$variable)))
+    MinN<-min(as.numeric(as.character(unique(allmelted$variable))))
+    MaxN<-max(as.numeric(as.character(unique(allmelted$variable))))
+    vectdeTicks<-round(seq(from=MinN,to = MaxN,length.out = Ticks),digits = 0)
+    ElAusente<-vectdeTicks[!(vectdeTicks %in% seqdeTicks)]
+    
+    Elreemplazito<-Elreemplazo<-NULL
+    for (ab in 1:length(ElAusente)){
+      Elreemplazito<-seqdeTicks[which.min(abs(seqdeTicks - ElAusente[ab])) ]
+      Elreemplazo<-c(Elreemplazo,Elreemplazito)
+    }
+    while (length(Elreemplazo[duplicated(Elreemplazo)])>0) { #print("yes")}
+      Elnuevoreemplazo<-seqdeTicks[seqdeTicks>Elreemplazo[duplicated(Elreemplazo)] & seqdeTicks< Elreemplazo[which(duplicated(Elreemplazo))+1] ]
+      Elreemplazo<-sort(c(unique(Elreemplazo),Elnuevoreemplazo ))  
+    }
+    
+    vectdeTicks2<-vectdeTicks[(vectdeTicks %in% seqdeTicks)]
+    NvectdeTicks<-sort(c(vectdeTicks2,Elreemplazo))
+    allmelted<-allmelted[allmelted$variable %in% NvectdeTicks,]
+  }
+  
+  #Elreemplazo[duplicated(Elreemplazo)==TRUE]
+  
+  if (!is.null(WhichTicks)) {
+    NvectdeTicks<-sort(c(WhichTicks))
+  }
+    
+  
+  allmelted2<-allmelted
+  ##################################################
+  Metrica<-unique(allmelted2$Metric)
+  errate<-unique(allmelted2$ErrorRate)
+  allmelted3<-allmeltedsas<-list()
+  CItita<-CItota<-CI<-NULL
+  CL<-c(90,95,99)
+  Z<-c(1.64,1.96, 2.58)
+  CItita<-CItota<-NULL
+  
+  if (length(Metrica)==1){
+    allmelted3<-allmelted2[allmelted2$Metric==Metrica,]
+    for (zeta in 1:length(Z)) {
+      namecito=paste("CI_",CL[zeta], sep="")
+      for (al in 1:dim(allmelted3)[1]) {
+        M=allmelted3$value[al]
+        SM=sqrt( (allmelted3$StdDev[al])^2/as.numeric(as.character(allmelted3$variable[al]) ) )
+        lower<-round(M-(Z[zeta]* SM),digits=3)
+        upper<-round(M+(Z[zeta]* SM),digits=3)
+        CItita<-cbind(namecito,paste("[",lower," , ",upper,"]", sep="") )
+        CItota<-rbind(CItota,CItita)  
+      }
+      allmelted3[namecito]<-CItota[,2]
+      CItita<-CItota<-NULL
+    }
+    
+    
+    
+    
+    
+  } else {
+    for(me in 1:length(Metrica) ) {
+      #print (Metrica[me])
+      tab<-allmelted2[allmelted2$Metric==Metrica[me],]
+      #print (tab)
+      for(eler in 1:length(errate)) {
+        namecito<-paste(Metrica[me],errate[eler],sep="_")
+        #print(namecito)
+        tab2<-tab[tab$ErrorRate==errate[eler],]
+        #print(tab2)
+        allmeltedsas<-list(tab2)
+        allmelted3[namecito]<-allmeltedsas
+      }
+      #print(allmelted2$Metric[me])
+    }
+    for (uu in 1:length(allmelted3)){
+      for (zeta in 1:length(Z)) {
+        namecito=paste("CI_",CL[zeta], sep="")
+        for (al in 1:dim(allmelted3[[uu]])[1]) {
+          M=allmelted3[[uu]]$value[al]
+          SM=sqrt( (allmelted3[[uu]]$StdDev[al])^2/as.numeric(as.character(allmelted3[[uu]]$variable[al]) ) )
+          lower<-round(M-(Z[zeta]* SM),digits=3)
+          upper<-round(M+(Z[zeta]* SM),digits=3)
+          CItita<-cbind(namecito,paste("[",lower," , ",upper,"]", sep="") )
+          CItota<-rbind(CItota,CItita)  
+        }
+        allmelted3[[uu]][namecito]<-CItota[,2]
+        CItita<-CItota<-NULL
+      }
+    }
+  }
+  
+  allmelted3
+  ################################################
+  
+  if (is.null(winnerSas[[1]]) ) {
+    result<-list(TestedTicks=NvectdeTicks,Omics=Omics,Minimums=Minimums,
+                 TablebyTick=allmelted3)
+  } else {
+  result<-list(TestedTicks=NvectdeTicks,Omics=Omics,Minimums=Minimums,CompWinner=CompWinner ,
+               TablebyTick=allmelted3)
+  }
+  return(result)
+}
+
+
+###########################################################
+operator<-function (X,Y, XLasso,YLasso,FUN,LassoIterations,...) {
+  args<-list(...)
+  #print("We entered into the operator")
+  #print("Los argumentos entrantes en operator son")
+  #print(args)
+  Comps<-args$Comps
+  iter<-args$iter
+  print(Comps)
+  FUN (X,Y,XLasso,YLasso,LassoIterations,...)
+  #FUN (...)
+}
+
+###########################################################
+PLSDA.MP<-function (X,Y,XLasso, YLasso, LassoIterations,...) {
+  #print("We are inside the PLSDA.MP function" )
+  args<-list(...)
+  #print("We entered into the operator")
+  #print("Los argumentos entrantes en operator son")
+  #print(args)
+  Comps<-args$Comps
+  iter<-args$iter
+  #print(Comps)
+  #print("Paso Comps Carajooooo!!!")
+  
+    if (length(X) >1){
+    summary(X)
+    ### LassoSelection ###
+    SelVarstita<-SelVars<-NULL
+    for (lst in 1:length(X)){
+      X[[lst]]<-scale(X[[lst]],center=TRUE, scale = FALSE)
+      SelVars<-LassoSelection (X=XLasso[[lst]],Y=as.factor(YLasso[2,]), IterationsforVarSelections=LassoIterations)
+      X[[lst]]<-X[[lst]][,colnames(X[[lst]]) %in% SelVars$SelectedVariables]#; dim(Xchica[[1]])
+    }
+    #sapply(Xchica,dim)
+    #summary(Xchica)
+    ######################
+    res2<- block.plsda(X,as.vector(Y[2,]), ncomp=Comps)  
+    perf.plsda <- try (perf(res2, validation = valid, folds = 5, 
+                            progressBar = FALSE, auc = TRUE, nrepeat = 1) ,silent=TRUE) 
+    ##
+    #TableMeans<-table<-NULL
+    if (class(perf.plsda) == "try-error") {
+      preMeans<-matrix(1,nrow=6,ncol=1)
+      colnames(preMeans)<-iter;rownames(preMeans)<-c("max.dist_ER","max.dist_BER","centroids.dist_ER","centroids.dist_BER","mahalanobis.dist_ER","mahalanobis.dist_BER")
+      ComponentWinner2<-matrix(1,nrow=6,ncol=1)
+      colnames(ComponentWinner2)<-iter;rownames(ComponentWinner2)<-c("max.dist_ER","max.dist_BER","centroids.dist_ER","centroids.dist_BER","mahalanobis.dist_ER","mahalanobis.dist_BER")
+    } else{
+      #plot(perf.plsda, col = color.mixo(1:3), sd = TRUE, legend.position = "horizontal")
+      preMeans<-perf.plsda$WeightedVote.error.rate
+      #preSDs<-perf.plsda$WeightedVote.error.rate.sd
+      
+      TableMeans<-table<-NULL
+      for (p in 1: length (preMeans)){
+        namecito2<-names(preMeans[p])
+        table<-preMeans[[p]][grep(pattern = "Overall",x = rownames(preMeans[[p]])),]
+        tipodeER<-gsub("Overall.", "", rownames(table))
+        rownames(table)<-paste(namecito2,tipodeER, sep="_")
+        TableMeans<-rbind(TableMeans,table)
+      }
+      #TableMeans
+      preMins<-as.matrix(apply(TableMeans, 1, FUN=min))
+      preComponentWinner<-data.frame(ComponentWinner=colnames(TableMeans)[apply(TableMeans,1,which.min)])
+      ComponentWinner2<-t(data.frame(strsplit(as.vector(preComponentWinner[,1]),split=" "))[2,])
+      rownames(ComponentWinner2)<-rownames(preMins);colnames(ComponentWinner2)<-iter
+    }
+    Mins<-as.matrix(cbind(Mins,preMins))
+    ComponentWinner<-cbind(ComponentWinner,ComponentWinner2)
+    ComponentWinner2<-ComponentWinner
+    class(ComponentWinner2)<-"numeric" 
+    
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+  } else {
+    ### LassoSelection ###
+    SelVars<-LassoSelection (X=XLasso[[1]],Y=as.factor(YLasso[2,]), IterationsforVarSelections=LassoIterations)
+    #SelVars$SelectedVariables<-c("Y",SelVars$SelectedVariables)
+    
+    X[[1]]<-X[[1]][,colnames(X[[1]]) %in% SelVars$SelectedVariables]#; dim(X[[1]])
+    ######################
+    CompsNEW<-min( (nrow(X[[1]])-1), Comps )
+    res2<- plsda(X[[1]],as.factor(Y[2,]), ncomp=CompsNEW)  
+    perf.plsda <- try (perf(res2, validation = valid, folds = 5, 
+                            progressBar = FALSE, auc = TRUE, nrepeat = 1) ,silent=TRUE) 
+    
+    if (class(perf.plsda)[[1]] == "try-error") {
+      preMins<-matrix(1,nrow=6,ncol=1)
+      colnames(preMins)<-iter;rownames(preMins)<-c("max.dist_ER","max.dist_BER","centroids.dist_ER","centroids.dist_BER","mahalanobis.dist_ER","mahalanobis.dist_BER")
+      ComponentWinner2<-matrix(1,nrow=6,ncol=1)
+      colnames(ComponentWinner2)<-iter;rownames(ComponentWinner2)<-c("max.dist_ER","max.dist_BER","centroids.dist_ER","centroids.dist_BER","mahalanobis.dist_ER","mahalanobis.dist_BER")
+    } else {
+      #plot(perf.plsda, col = color.mixo(1:3), sd = TRUE, legend.position = "horizontal")
+      preMeans<-perf.plsda$error.rate
+      
+      TableMeans<-table<-NULL
+      for (p in 1: length (preMeans)){
+        namecito2<-names(preMeans[p])
+        if (namecito2=="overall"){
+          namecito2<-"ER"
+        }
+        table<-t(preMeans[[p]])
+        rownames(table)<-paste(rownames(table),namecito2, sep="_")
+        TableMeans<-rbind(TableMeans,table)
+      }
+      #TableMeans
+      preMins<-as.matrix(apply(TableMeans, 1, FUN=min))
+      preComponentWinner<-data.frame(ComponentWinner=colnames(TableMeans)[apply(TableMeans,1,which.min)])
+      ComponentWinner2<-t(data.frame(strsplit(as.vector(preComponentWinner[,1]),split=" "))[2,])
+      rownames(ComponentWinner2)<-rownames(preMins);colnames(ComponentWinner2)<-iter
+    }
+    # Mins<-as.matrix(cbind(Mins,preMins))
+    # ComponentWinner<-cbind(ComponentWinner,ComponentWinner2)
+    # ComponentWinner2<-ComponentWinner
+    # class(ComponentWinner2)<-"numeric"  
+    
+  } # Cierre del Else grande que separa si vas a block.plsda o a plsda
+  ##### Este es el fin del PLSDA module #####
+  res=list(preMins=preMins,ComponentWinner2=ComponentWinner2 )
+  return (res)
+} # Cierre del modulo PLSDA
+
+###########################################################
+Random.Forest.MP<-function (X,Y,XLasso,YLasso, LassoIterations,...) {
+  args<-list(...)
+  #print(args)
+  Comps<-args$Comps
+  iter<-args$iter
+  Xchicaflat2Lasso<-do.call(cbind.data.frame, XLasso)
+  Xchicaflat2Lasso<-scale(Xchicaflat2Lasso,center=TRUE, scale = FALSE)
+  names(Xchicaflat2Lasso) <- make.names(names(Xchicaflat2Lasso))
+  YYLasso<-as.data.frame(YLasso[1,]);colnames(YYLasso)<-"Y"
+  XchicaflatLasso<-merge(YYLasso,Xchicaflat2Lasso,by=0 );rownames(XchicaflatLasso)<-XchicaflatLasso[,1];XchicaflatLasso<-XchicaflatLasso[,-1]
+  names(XchicaflatLasso) <- make.names(names(XchicaflatLasso))
+  rm(Xchicaflat2Lasso,YYLasso)
+  
+  Xchicaflat2<-do.call(cbind.data.frame, X); dim(Xchicaflat2)
+  Xchicaflat2<-scale(Xchicaflat2,center=TRUE, scale = FALSE)
+  names(Xchicaflat2) <- make.names(names(Xchicaflat2))
+  YY<-as.data.frame(Y[1,]);colnames(YY)<-"Y"
+  Xchicaflat<-merge(YY,Xchicaflat2,by=0 );rownames(Xchicaflat)<-Xchicaflat[,1];Xchicaflat<-Xchicaflat[,-1]
+  names(Xchicaflat) <- make.names(names(Xchicaflat))
+  rm(Xchicaflat2,YY)
+  
+  ### LassoSelection ###
+  SelVars<-LassoSelection (X=XchicaflatLasso[,-1],Y=XchicaflatLasso[,1], IterationsforVarSelections=LassoIterations)
+  SelVars$SelectedVariables<-c("Y",SelVars$SelectedVariables)
+  Xchicaflat<-Xchicaflat[,colnames(Xchicaflat) %in% SelVars$SelectedVariables]#; dim(Xchicaflat)
+  set.seed(1)
+  model <- randomForest(Y ~., data=Xchicaflat)
+  
+  preMins<-model$err.rate[500,1]
+  #preMinsbigrfc<-forest@trainerr[length(forest@trainerr)]
+  #Mins<-cbind(Mins,preMins)
+  #Minsbigrfc<-cbind(Minsbigrfc,preMinsbigrfc)
+  rm(model)
+  return(preMins)
+}  
+###########################################################
+
+LassoSelection<- function (X,Y, IterationsforVarSelections=15, ...){
+  # Input:
+  # X: This is the table of predictor variables where n is individuals and p is variables
+  # Y: This is the vector of response variables
+  # IterationsforVarSelections: Number of iterations of the variable selection step
+  ##################
+  require ("glmnet")
+  #X=Xchicaflat[,-1]
+  #Y=Xchicaflat[,1]
+  #IterationsforVarSelections=3
+  
+  X<-as.matrix(X)
+  alpha_val=1
+  SelVars<- SelectedVariables<-NULL
+  SelecVariablesalliterations<-NULL 
+  CoefficientsVarstita<-CoefficientsVars<-NULL
+  for (i in 1:IterationsforVarSelections) {
+    print (paste ("LASSO Variable Selection iteration ",i, sep=" "))
+    
+    repeat {
+      cfit<-try(cv.glmnet(as.matrix(X),as.vector(Y), 
+                          standardize=TRUE, family="multinomial", 
+                          alpha = alpha_val, grouped = FALSE,
+                          type.measure = "mae"),silent=TRUE ) # cross validation with  
+      
+      if (class(cfit) == "try-error") {
+        X=rbind(X,X)
+        Y=c(Y,Y)
+        print (dim (X))
+        print (length(Y))
+      } else { 
+        
+        for (ls in 1:length(coef(cfit, s = "lambda.min"))) {
+          CoefficientsVarstita<-as.matrix(coef(cfit, s = "lambda.min")[[ls]])
+          CoefficientsVarstita<-CoefficientsVarstita[-1,,drop=FALSE]
+          CoefficientsVars<-rbind(CoefficientsVars,CoefficientsVarstita)
+        }
+        SelVarsPositions<-which(CoefficientsVars != 0)
+        SelVarssmall<-CoefficientsVars[which(CoefficientsVars != 0),,drop=FALSE]
+        SelVarssmalllista<- unique(rownames(SelVarssmall))
+        SelVars<-c(SelVars,SelVarssmalllista)
+        SelVars<-unique(SelVars)
+        #print("SelVars")
+        #print(SelVars)
+        break 
+      }
+    }
+    SelecVariablesalliterations<-c(SelecVariablesalliterations,SelVars)  
+    #print("SelecVariablesalliterations")
+    #print(SelecVariablesalliterations)
+    SelectedVariables<-unique(c(SelecVariablesalliterations))
+    #print("SelectedVariables")
+    #print(SelectedVariables)
+    
+    
+  }
+  res<-list(SelectedVariables=SelectedVariables)
+  return(res)
+}
+###########################################################
+ErrorRateplot<-function (x, ErrorRateType="BER",MetricsType="max.dist",ticks=NULL,Projection=FALSE,Spline=TRUE, TheoreticER=NULL,ConfInt=0.95) {
+  # Input:
+  # x: list of tables with the error rates results and the number of components per tick 
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids.dist", Mahalanobis 
+  #              distance "mahalanobis.dist" or "All"
+  
+  # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+  #            using "ggplot" or "plotbase" respectively
+  
+  # ticks: It can be either FALSE to indicate that all calculated ticks should be plotted or a value
+  #        so less ticks will be plotted. 
+  
+  # Output:
+  # A Linechart with standard deviation. If the plot represent just one error type and one metrics
+  # The number of components will appear indicating that was the best number of component.
+  Layers<-x$Omics
+  rownames(Layers)<-NULL
+  ListofMins<-x$Minimums
+  
+  if(is.null(ticks)){
+    DegreesOfFreedom<-length(ListofMins)-1
+  } else {
+    DegreesOfFreedom<-ticks-1
+  }
+  if (MetricsType=="All" || ErrorRateType=="Both"){
+    allmelted3<-do.call(rbind.data.frame, x$TablebyTick)
+    if (MetricsType!="All" ){
+      allmelted3<-allmelted3[allmelted3$Metric==MetricsType,]
+    }
+    if (ErrorRateType!="Both" ){
+      allmelted3<-allmelted3[allmelted3$ErrorRate==ErrorRateType,]
+    }
+  } else{
+    selector<-paste(MetricsType,ErrorRateType,sep="_")  
+  }
+  
+  if (dim(ListofMins[[1]])[1]==1){
+    allmelted3<-x$TablebyTick
+  
+  } else{
+    allmelted3<-x$TablebyTick[[selector]]
+  }
+  
+  if (ConfInt==0.90){
+    df<-allmelted3[,c(7:9)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_90, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  } 
+  if (ConfInt==0.95) {
+    df<-allmelted3[,c(7:9)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_95, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  }
+  if(ConfInt==0.99){
+    df<-allmelted3[,c(7:9)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_99, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  }
+  
+  allmelted3$lower<-lowers
+  allmelted3$upper<-uppers
+  
+  allmeltedmodel<-allmelted3
+  #rownames(allmeltedmodel)<-seq(1:dim(allmeltedmodel)[1])
+  
+  ro=dim(allmeltedmodel)[1]
+  
+  if (allmeltedmodel$value[ro-1]<allmeltedmodel$value[ro]) {
+        allmeltedmodel$value[ro]<-allmeltedmodel$value[ro-1]-abs(allmeltedmodel$StdDev[ro-1])
+  } else{}
+  
+  
+  #
+  if (is.null(TheoreticER) ) {
+    MinimumError=min(allmelted3$value)
+    SamplesEvaluated=SamplesRequired=as.numeric(as.character(allmelted3$variable[allmelted3$value==min(allmelted3$value)]))
+  } else{
+    MinimumError=TheoreticER 
+    
+  }
+  
+  if (length(unique(allmelted3$Category))>1) {
+    p<-ggplot(allmelted3, aes(x=variable, y= value, group=Category)) +
+          geom_line(aes(linetype=ErrorRate, color=Metric), size=1) + 
+          ylim(NA,1.1) +
+          ylab("Classification Error Rate") +
+          xlab("Number of Samples") +
+          theme(axis.title=element_text(face="bold",size="14"),
+                axis.text.x = element_text(face="bold", size=18),
+                axis.text.y = element_text(face="bold", size=18),
+                plot.title = element_text(size = "16", face = "bold")
+          ) +
+          ggtitle(paste(length(unique(allmelted2$variable))-1, "segments", sep= " ")) +
+          scale_linetype_manual(values=c("solid", "twodash"))+
+          #geom_text(aes(allmelted$Comp))+
+          geom_errorbar(aes(ymin = value - StdDev,
+                            ymax = value + StdDev, color=Metric))
+        legend <- g_legend(p)
+        grid.newpage()
+        vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+        vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+        subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+        print(p + theme(legend.position = "none"), vp = vp1)
+        upViewport(0)
+        pushViewport(vpleg)
+        grid.draw(legend)
+        upViewport(0)
+        pushViewport(subvp)
+        my_table <- tableGrob(Layers) 
+        grid.draw(my_table)
+  } else {
+    if (Projection==TRUE & Spline==FALSE){
+          Spline=TRUE
+          print("Since Projection==TRUE, the Spline will be plotted")
+        }
+    if (Projection==FALSE & Spline==FALSE){
+      p<-ggplot() + 
+            geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+                          linetype=ErrorRate, color=Metric), allmelted3, size=1) +
+            geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+                              ymin = value - StdDev, ymax = value + StdDev, color=Metric), allmelted3) +
+            ylim(NA,1.1) +
+            ylab("Classification Error Rate") +
+            xlab("Number of Samples") +
+            theme(axis.title=element_text(face="bold",size="14"),
+                  axis.text.x = element_text(face="bold", size=18),
+                  axis.text.y = element_text(face="bold", size=18),
+                  plot.title = element_text(size = "16", face = "bold")
+            ) +
+            ggtitle(paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")) +
+            scale_linetype_manual(values=c("solid", "twodash"))
+          
+          legend <- g_legend(p)
+          grid.newpage()
+          vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+          vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+          subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+          print(p + theme(legend.position = "none"), vp = vp1)
+          upViewport(0)
+          pushViewport(vpleg)
+          grid.draw(legend)
+          upViewport(0)
+          pushViewport(subvp)
+          my_table <- tableGrob(Layers) 
+          grid.draw(my_table)
+        }
+    if (Projection==FALSE & Spline==TRUE){
+      MinimumError=min(allmelted3$value)
+      fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      
+      ht01 <- seq(min(as.numeric(as.character(allmeltedmodel$variable))),2000, length.out = 2000)
+      prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+      ht01Table<-cbind(ht01,as.data.frame(prediction));colnames(ht01Table)<-c("ht","ErrorPred", "STDpred")
+      
+      # fmloess <- loess(value ~ bs(as.numeric(as.character(variable))), data = allmelted3)
+      # DESVESTpredictionloess<-loess(StdDev ~ bs(as.numeric(as.character(variable))), data = allmelted3)
+      # htloess <- seq(min(as.numeric(as.character(allmelted3$value))),2000, length.out = 2000)
+      # prediction<-as.data.frame(cbind(predict(fmloess, data.frame(variable = htloess)),predict(DESVESTpredictionloess, data.frame(variable = htloess))   )  );colnames(prediction)<-c("Prediction","STDpred")
+      # htloessTable<-cbind(htloess,as.data.frame(prediction));colnames(htloessTable)<-c("ht","ErrorPred", "STDpred")
+      # 
+      ht <- seq(min(as.numeric(as.character(allmeltedmodel$variable))),max(as.numeric(as.character(allmeltedmodel$variable))), length.out = 200)
+      htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+      
+      NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+      NSampleMax<-1+round(NSampleMaxTable$ht[dim(NSampleMaxTable)[1]])
+      NSampleMaxPosition<-as.numeric(rownames(NSampleMaxTable)[dim(NSampleMaxTable)[1]])
+      
+      NSampleMaxTable$EplusStd<-NSampleMaxTable$ErrorPred - NSampleMaxTable$STDpred
+      Theplusminustable<-as.data.frame(NSampleMaxTable[NSampleMaxTable[,4]>=MinimumError,])
+      Theplusminus<-round(Theplusminustable$ht[dim(Theplusminustable)[1]])
+      TheplusminusPosition<-as.numeric(rownames(Theplusminustable)[dim(Theplusminustable)[1]])
+      
+      SamplesEvaluated<-as.numeric(as.character(allmelted3$variable[dim(allmelted3)[1]]))
+      SamplesRequired<-round(NSampleMaxTable$ht[NSampleMaxPosition])
+      MOE<-paste("±",round(NSampleMax-Theplusminus))
+      
+      p<-ggplot() + 
+        geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+                      linetype=ErrorRate, color=Metric), allmelted3, size=1) +
+        geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+                          ymin = lower, ymax = upper, color=Metric), allmelted3) +
+        geom_smooth(method="loess", span=0.2, aes(x=ht, y=ErrorPred,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+        ylim(NA,1.1) +
+        ylab("Classification Error Rate") +
+        xlab("Number of Samples") +
+        theme(axis.title=element_text(face="bold",size="14"),
+              axis.text.x = element_text(face="bold", size=18),
+              axis.text.y = element_text(face="bold", size=18),
+              plot.title = element_text(size = "16", face = "bold")
+        ) +
+        ggtitle(paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")) +
+        scale_linetype_manual(values=c("solid", "twodash"))
+      
+      legend <- g_legend(p)
+      grid.newpage()
+      vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+      vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+      subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+      subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+      print(p + theme(legend.position = "none"), vp = vp1)
+      upViewport(0)
+      pushViewport(vpleg)
+      grid.draw(legend)
+      upViewport(0)
+      pushViewport(subvp)
+      rownames(Layers)<-NULL
+      my_table <- tableGrob(Layers) 
+      grid.draw(my_table)
+      
+      
+      TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+                      SamplesReq=SamplesRequired,
+                      MOE= MOE) 
+      TERtableGrob <- tableGrob(TERtable) 
+      upViewport(0)
+      pushViewport(subvp2)
+      grid.draw(TERtableGrob)
+      
+      # AllTERtables<-AllTERtablesSAS<-list()
+      # NamecitoTerTable<-paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")
+      # TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+      #                 SamplesReq=SamplesRequired,
+      #                 MOE= MOE) 
+    }
+    if (Projection==TRUE & Spline==TRUE){
+      fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      
+      ht01 <- seq(min(as.numeric(as.character(allmeltedmodel$variable))),2000, length.out = 2000)
+      prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+      ht01Table<-cbind(ht01,as.data.frame(prediction));colnames(ht01Table)<-c("ht","ErrorPred", "STDpred")
+      
+      # fmloess <- loess(value ~ bs(as.numeric(as.character(variable))), data = allmelted3)
+      # DESVESTpredictionloess<-loess(StdDev ~ bs(as.numeric(as.character(variable))), data = allmelted3)
+      # htloess <- seq(min(as.numeric(as.character(allmelted3$value))),2000, length.out = 2000)
+      # prediction<-as.data.frame(cbind(predict(fmloess, data.frame(variable = htloess)),predict(DESVESTpredictionloess, data.frame(variable = htloess))   )  );colnames(prediction)<-c("Prediction","STDpred")
+      # htloessTable<-cbind(htloess,as.data.frame(prediction));colnames(htloessTable)<-c("ht","ErrorPred", "STDpred")
+      # 
+      ht <- seq(min(as.numeric(as.character(allmeltedmodel$variable))),max(as.numeric(as.character(allmeltedmodel$variable))), length.out = 200)
+      htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+      
+      NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+      NSampleMax<-1+round(NSampleMaxTable$ht[dim(NSampleMaxTable)[1]])
+      NSampleMaxPosition<-as.numeric(rownames(NSampleMaxTable)[dim(NSampleMaxTable)[1]])
+
+      NSampleMaxTable$EplusStd<-NSampleMaxTable$ErrorPred - NSampleMaxTable$STDpred
+      Theplusminustable<-as.data.frame(NSampleMaxTable[NSampleMaxTable[,4]>=MinimumError,])
+      Theplusminus<-round(Theplusminustable$ht[dim(Theplusminustable)[1]])
+      TheplusminusPosition<-as.numeric(rownames(Theplusminustable)[dim(Theplusminustable)[1]])
+
+      SamplesEvaluated<-as.numeric(as.character(allmelted3$variable[dim(allmelted3)[1]]))
+      SamplesRequired<-round(NSampleMaxTable$ht[NSampleMaxPosition])
+      MOE<-paste("±",round(NSampleMax-Theplusminus))
+#################################
+      # Smoooth version
+      # for (tb in 1:dim(htloessTable)[1] ) {
+      #   if (htloessTable[tb,2]>=MinimumError) {
+      #     #print(val)
+      #     val<-as.numeric(as.character(rownames(htloessTable)[tb]))
+      #     #print(val)
+      #     #print(paste(htloessTable[tb,2]>=MinimumError,val))
+      #     #val<-val+1
+      #     #NSampleMax<-1 + round(NSampleMaxTable$ht[dim(NSampleMaxTable)[1]])
+      #   } else {  
+      #     break
+      #   }  
+      # }
+      # val
+      # 
+      # NSampleMaxTable<-as.data.frame(htloessTable[1:val,])
+      # NSampleMax<-1+round(NSampleMaxTable$ht[dim(NSampleMaxTable)[1]])
+      # NSampleMaxPosition<-as.numeric(rownames(NSampleMaxTable)[dim(NSampleMaxTable)[1]])
+      # 
+      # NSampleMaxTable$EplusStd<-NSampleMaxTable$ErrorPred - abs(NSampleMaxTable$STDpred)
+      # 
+      # for (plusminus in 1:dim(NSampleMaxTable)[1] ) {
+      #   if (NSampleMaxTable[plusminus,4]>=MinimumError) {
+      #     pm<-as.numeric(as.character(rownames(NSampleMaxTable)[plusminus]))
+      #   } else {  
+      #     break
+      #   }  
+      # }
+      # pm
+      # Theplusminustable<-as.data.frame(NSampleMaxTable[1:pm,])
+      # Theplusminus<-round(Theplusminustable$ht[dim(Theplusminustable)[1]])
+      # TheplusminusPosition<-as.numeric(rownames(Theplusminustable)[dim(Theplusminustable)[1]])
+      # 
+      # SamplesEvaluated<-as.numeric(as.character(allmelted3$variable[dim(allmelted3)[1]]))
+      # SamplesRequired<-round(NSampleMaxTable$ht[NSampleMaxPosition])
+      # MOE<-paste("±",round(NSampleMax-Theplusminus))
+      
+          
+        p<-ggplot() + 
+          geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+                        linetype=ErrorRate, color=Metric), allmelted3, size=1) +
+          geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+                            ymin = lower, ymax = upper, color=Metric), allmelted3) +
+          
+          #geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+          geom_smooth(method="loess", span=0.2, aes(x=ht, y=ErrorPred,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+          #geom_smooth(method="loess", aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+          #                                linetype=ErrorRate, color="SPline"), allmelted3, size=1.3 ) +  
+          #geom_ribbon(aes(x=as.numeric(as.character(NSampleMaxTable$ht)), color="SPline",
+          #               ymin=NSampleMaxTable$ErrorPred-NSampleMaxTable$STDpred,
+          #              ymax=NSampleMaxTable$ErrorPred+NSampleMaxTable$STDpred ),data=NSampleMaxTable, alpha=0.2) +
+          
+          ylim(NA,1.1) +
+          ylab("Classification Error Rate") +
+          xlab("Number of Samples") +
+          theme(axis.title=element_text(face="bold",size="14"),
+                axis.text.x = element_text(face="bold", size=18),
+                axis.text.y = element_text(face="bold", size=18),
+                plot.title = element_text(size = "16", face = "bold")
+          ) +
+          ggtitle(paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")) +
+          scale_linetype_manual(values=c("solid", "twodash"))
+        
+        legend <- g_legend(p)
+        grid.newpage()
+        vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+        vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+        subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+        subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+        print(p + theme(legend.position = "none"), vp = vp1)
+        upViewport(0)
+        pushViewport(vpleg)
+        grid.draw(legend)
+        upViewport(0)
+        pushViewport(subvp)
+        rownames(Layers)<-NULL
+        my_table <- tableGrob(Layers) 
+        grid.draw(my_table)
+        
+        
+        TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+                        SamplesReq=SamplesRequired,
+                        MOE= MOE) 
+        TERtableGrob <- tableGrob(TERtable) 
+        upViewport(0)
+        pushViewport(subvp2)
+        grid.draw(TERtableGrob)
+        
+        # AllTERtables<-AllTERtablesSAS<-list()
+        # NamecitoTerTable<-paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")
+        # TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+        #                 SamplesReq=SamplesRequired,
+        #                 MOE= MOE) 
+    }
+  }
+}
+
+
+###########################################################
+# PlotbyTick<-function (x, Module="RF", ErrorRateType="BER",MetricsType="max.dist",PlotStyle="ggplot",ticks=FALSE,Projection=FALSE,Spline=TRUE, TheoreticER=NULL) {
+#   # Input:
+#   # x: list of tables with the error rates results and the number of components per tick 
+#   # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+#   #                balanced error rate "BER" or "Both"
+#   # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+#   #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+#   #              distance "Mahalanobis" or "All"
+#   
+#   # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+#   #            using "ggplot" or "plotbase" respectively
+#   
+#   # ticks: It can be either FALSE to indicate that all calculated ticks should be plotted or a value
+#   #        so less ticks will be plotted. 
+#   
+#   # Output:
+#   # Linecharts with standard deviation by increased number of ticks to evaluate the prediction strength
+#   
+#   Layers<-x$Omics
+#   ListofMins<-x$Minimums
+#   
+#   
+#   SDsas<-StdDev<-list()
+#   for(lista in 1:length(ListofMins)){
+#     Table<-ListofMins[[lista]]
+#     SDtita<-SDTota<-NULL
+#     for (row in 1:nrow(Table)){
+#       #SDtita<-sd(Table[row,])
+#       SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+#       SDTota<-rbind(SDTota,SDtita)
+#     }
+#     #SDTota
+#     rownames(SDTota)<-rownames(ListofMins[[1]])
+#     nameList<-names(ListofMins[lista])
+#     SDsas<-list(SDTota)
+#     StdDev[nameList]<-SDsas
+#     
+#   }
+#   ###
+#   PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+#   rownames(PreSDstable)<-rownames(StdDev[[1]])
+#   colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[3,])[,1]
+#   
+#   for (i in 1: length(StdDev)) {
+#     PreSDstable[,i]<-rowMeans(StdDev[[i]])
+#   }
+#   
+#   ###
+#   Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+#   rownames(Premeanstable)<-rownames(ListofMins[[1]])
+#   colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+#   
+#   for (i in 1: length(ListofMins)) {
+#     Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+#   }
+#   
+#   ListofComps<-x$CompWinner
+#   
+#   if (Module!="RF") {
+#     ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+#     for (i in 1: length(ListofComps)) {
+#       ToNumListofComps2<-ListofComps[[i]]
+#       class(ToNumListofComps2) <- "numeric"
+#       for (row in 1:nrow(ToNumListofComps2)){
+#         PreCompstabletita<-rowMedians(ToNumListofComps2)
+#       }
+#       PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+#     }
+#     rownames(PreCompstable)<-rownames(ListofComps[[1]])
+#     colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[3,])[,1]
+#     #PreCompstable
+#     PreCompstable<-as.data.frame(PreCompstable)
+#     ######
+#     if (ErrorRateType=="BER"){
+#       MeansTable<-Premeanstable[grep("BER",x = rownames(Premeanstable)),]
+#       SDstable<-PreSDstable[grep("BER",x = rownames(PreSDstable)),]
+#       Compstable<-PreCompstable[grep("BER",x = rownames(PreCompstable)),]
+#     } else if (ErrorRateType=="ER") {
+#       MeansTable<-Premeanstable[grep("_ER",x = rownames(Premeanstable)),]
+#       SDstable<-PreSDstable[grep("_ER",x = rownames(PreSDstable)),]
+#       Compstable<-PreCompstable[grep("_ER",x = rownames(PreCompstable)),]
+#     } else if (ErrorRateType=="Both") {
+#       MeansTable<-Premeanstable
+#       SDstable<-PreSDstable
+#       Compstable<-PreCompstable
+#     }
+#     
+#     if (MetricsType=="max.dist"){
+#       MeansTable2<-MeansTable[grep("max.dist",x = rownames(MeansTable)),]
+#       SDstable2<-SDstable[grep("max.dist",x = rownames(SDstable)),]
+#       Compstable2<-Compstable[grep("max.dist",x = rownames(Compstable)),]
+#     } else if (MetricsType=="centroids") {
+#       MeansTable2<-MeansTable[grep("centroids",x = rownames(MeansTable)),]
+#       SDstable2<-SDstable[grep("centroids",x = rownames(SDstable)),]
+#       Compstable2<-Compstable[grep("centroids",x = rownames(Compstable)),]
+#     } else if (MetricsType=="Mahalanobis") {
+#       MeansTable2<-MeansTable[grep("ahalanobis",x = rownames(MeansTable)),]
+#       SDstable2<-SDstable[grep("ahalanobis",x = rownames(SDstable)),]
+#       Compstable2<-Compstable[grep("ahalanobis",x = rownames(Compstable)),]
+#     } else if (MetricsType=="All") {
+#       MeansTable2<-MeansTable
+#       SDstable2<-SDstable
+#       Compstable2<-Compstable
+#     }
+#     MeansTable2$Category <- rownames(MeansTable2)
+#     SDstable2$Category <- rownames(SDstable2)
+#     Compstable2$Category <- rownames(Compstable2)
+#     
+#     meltedMeans<-melt(MeansTable2, id.vars="Category")
+#     meltedSDs<-melt(SDstable2, id.vars="Category")
+#     colnames(meltedSDs)[3]<-"StdDev"
+#     meltedComps<-melt(Compstable2, id.vars="Category")
+#     colnames(meltedComps)[3]<-"Comp"
+#     
+#     allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+#     allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+#     allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+#   } else {
+#     if (ErrorRateType=="BER"){
+#       print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+#       MeansTable2<-Premeanstable
+#       SDstable2<-PreSDstable
+#     } else if (ErrorRateType=="ER") {
+#       MeansTable2<-Premeanstable
+#       SDstable2<-PreSDstable
+#     } else if (ErrorRateType=="Both") {
+#       print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+#       MeansTable2<-Premeanstable
+#       SDstable2<-PreSDstable
+#     }
+#     MeansTable2$Category <- rownames(MeansTable2)
+#     SDstable2$Category <- rownames(SDstable2)
+#     
+#     meltedMeans<-melt(MeansTable2, id.vars="Category")
+#     meltedSDs<-melt(SDstable2, id.vars="Category")
+#     colnames(meltedSDs)[3]<-"StdDev"
+#     
+#     allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+#     allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+#     allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+#   }
+#   #
+#   allmelted2<-allmelted
+#   for(ro in 1:(dim(allmelted2)[1]-1) ) {
+#     #print (ro)
+#     if (allmelted2$value[ro+1]>allmelted2$value[ro]) {
+#       allmelted2$value[ro+1]<-allmelted2$value[ro]-0.01
+#     } else{}
+#   }
+#   #
+#   if (is.null(TheoreticER) ) {
+#     MinimumError=min(allmelted2$value)
+#   } else{
+#     MinimumError=TheoreticER 
+#   }
+#   #allmelted2$sqrtSamples<- sqrt(as.numeric(as.character(allmelted2$variable)))
+#   
+#   for (tiquis in 2:dim(allmelted2)[1]) {
+#     pedazo<-allmelted2[1:tiquis,]
+#     DegreesOfFreedom<-dim(pedazo)[1]-1
+#     
+#     if (PlotStyle=="ggplot") {
+#       if (Module!="RF"){
+#         if (length(unique(pedazo$Category))>1) {
+#           p<-ggplot(pedazo, aes(x=variable, y= value, group=Category)) +
+#             geom_line(aes(linetype=ErrorRate, color=Metric), size=1) + 
+#             #ylim(NA,1.1) +
+#             ylab("Classification Error Rate") +
+#             xlab("Number of Samples") +
+#             theme(axis.title=element_text(face="bold",size="14"),
+#                   axis.text.x = element_text(face="bold", size=18),
+#                   axis.text.y = element_text(face="bold", size=18),
+#                   plot.title = element_text(size = "16", face = "bold")
+#             ) +
+#             ggtitle(paste(length(unique(allmelted$variable)), "segments", sep= " ")) +
+#             scale_linetype_manual(values=c("solid", "twodash"))+
+#             #geom_text(aes(allmelted$Comp))+
+#             geom_errorbar(aes(ymin = value - StdDev,
+#                               ymax = value + StdDev, color=Metric))
+#           legend <- g_legend(p)
+#           grid.newpage()
+#           vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#           vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#           subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#           print(p + theme(legend.position = "none"), vp = vp1)
+#           upViewport(0)
+#           pushViewport(vpleg)
+#           grid.draw(legend)
+#           upViewport(0)
+#           pushViewport(subvp)
+#           my_table <- tableGrob(Layers) 
+#           grid.draw(my_table)
+#         } else {
+#           if (Projection==TRUE & Spline==FALSE){
+#             Spline=TRUE
+#             print("Since Projection==TRUE, the Spline will be plotted")
+#           }
+#           if (Projection==FALSE & Spline==FALSE){
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#           }
+#           if (Projection==FALSE & Spline==TRUE){
+#             #fm1 <- lm(value ~ bs(as.numeric(as.character(variable)),degree = 1, df = DegreesOfFreedom), data = pedazo)
+#             fm1 <- lm(value ~ ns(as.numeric(as.character(variable)), df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             ht <- seq(min(as.numeric(as.character(pedazo$variable))),max(as.numeric(as.character(pedazo$variable))), length.out = 200)
+#             htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+#             ht01Table<-cbind(ht01,as.data.frame(predict(fm1, data.frame(variable = ht01))));colnames(ht01Table)<-c("ht","ErrorPred")
+#             
+#             
+#             NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+#             NSampleMax<-round(as.numeric(as.character(NSampleMaxTable[dim(NSampleMaxTable)[1],1])))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=htTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             
+#             TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),SamplesReq=NSampleMax)
+#             TERtableGrob <- tableGrob(TERtable) 
+#             upViewport(0)
+#             pushViewport(subvp2)
+#             grid.draw(TERtableGrob)
+#             
+#           }
+#           
+#           if (Projection==TRUE & Spline==TRUE){
+#             #fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             fm1 <- lm(value ~ ns(as.numeric(as.character(variable)), df = DegreesOfFreedom), data = pedazo)
+#             DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+#             head(prediction)
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction","STDpred")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+#               geom_ribbon(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline",ymin=Prediction-1.96*STDpred,ymax=Prediction+1.96*STDpred ),data=NSampleMaxTable, alpha=0.2) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             
+#             AllTERtables<-AllTERtablesSAS<-list()
+#             if (!is.null(TheoreticER)) {
+#               NamecitoTerTable<-paste(length(unique(pedazo$variable)), "segments", sep= " ")
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#               colnames(TERtable)<-length(unique(pedazo$variable))
+#             }
+#             AllTERtablesSAS<-list(TERtable)
+#           }
+#         }
+#         AllTERtables[NamecitoTerTable]<-AllTERtablesSAS
+#       } else { #### If Module is RF
+#         
+#         if (Spline==FALSE){
+#           if (Projection==TRUE){
+#             Spline=TRUE
+#             print("Since Projection==TRUE, the Spline will be plotted")
+#           }
+#           if (Projection==FALSE){
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#           }
+#         }
+#         if (Spline==TRUE){
+#           if (Projection==FALSE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             ht <- seq(min(as.numeric(as.character(pedazo$variable))),max(as.numeric(as.character(pedazo$variable))), length.out = 200)
+#             htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+#             
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=htTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             if (!is.null(TheoreticER)) {
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#             }
+#           }
+#           if (Projection==TRUE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             head(prediction)
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             if (!is.null(TheoreticER)) {
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#             }
+#           }
+#         }
+#       } # End of Module RF
+#     }
+#   }
+#   return(AllTERtables)
+# }
+
+###########################################################
+###########################################################
+
+PredictionTest<-function (Predictors, Lst, Module="PLSDA", ErrorRateType="BER",MetricsType="Mahalanobis",PlotStyle="ggplot",ticks,WhichTicks=NULL,DegFreed=NULL,Projection=TRUE,Spline=TRUE, TheoreticER=NULL, ConfInt=0.95) {
+  # Input:
+  # Predictors: list of tables of omics
+  # Lst: list of sample names This is the piece of samples to be evaluated in each tick
+  # Module: The strategy used to calculate the error rate
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+  #              distance "Mahalanobis" or "All"
+  
+  # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+  #            using "ggplot" or "plotbase" respectively
+  
+  # ticks: It can be either NULL to indicate that all calculated ticks should be plotted or a value
+  #        so less ticks will be plotted. 
+  
+  # WhichTicks: Vector of numbers of ticks to analyze in a second round
+  ##### The ones that i have to hide
+  # DegFreed: Degrees of freedom to calculate the model ##### Esto creo que lo debo anular
+  # Projection: solo TRUE, it is to say the plot to project until the TheoreticER value. ##### Esto creo que lo debo anular
+  # Spline: solo TRUE, it is to say to plot the Spline model until TheoreticER value. ##### Esto creo que lo debo anular
+  # TheoreticER: It is the ER value until the model will be projected. If NULL, the ER value is the minimum obtained in the analysis. ##### Esto creo que lo debo anular
+  # ConfInt: Confidence interval calculator. it can be 0.90, 0.95 and 0.99. At the end i am not using it for plotting. ##### Esto creo que lo debo anular
+
+  # Output:
+  # TestedTicks: Number of ticks calculated
+  # Omics: The Omics evaluated
+  # Minimums: A list of the minimum value of error rate, balanced (BER) or not (ER) obtained per each ten
+  #           component analysis. This is measured through three distance metrics to evaluate the 
+  #           classification performance of the model. Maximal distance (max.dist), distance to 
+  #           centroids (centroids) or Mahalanobis distance (Mahalanobis)
+  #           Thus, each table contains the results per each iteration at different subsets of samples
+  
+  # CompWinner: A list of the number of components in which the minimum value of error rate, 
+  #             balanced (BER) or not (ER) was obtainde per each iteration. This is measured through 
+  #             the three mentioned distance metrics to evaluate the classification performance 
+  #             of the model. Thus, each table contains the components per each iteration at different 
+  #             subsets of samples
+  
+  # Summary: a summary of the results (I think i will hide this)
+  # TablebyTick: A table used to plot the results obtained using "PlotPredictionTest"
+  
+  
+  Samples<-Lst
+  print(paste("analysis with",length(Samples),"samples"))
+  NewList<-Predictors
+  if (! is.list(Predictors) ) {
+    stop("\\nOmics dataset must be a list with at least two elements")
+  }
+  ###########
+  # Y
+  Y<-t(as.matrix(Predictors[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  if (ncol(Y) != 1) {
+    stop("\\nResponse must be a single variable")
+  }
+  if (any(is.na(Y))) {
+    stop("\\nResponse must not contain missing values")
+  }
+  if (is.null(colnames(Y))) {
+    colnames(Y) = "Y"
+  }
+  if (is.null(rownames(Y))) {
+    rownames(Y) = 1:n
+  }
+  
+  # Step1: Match the sample size
+  LosIndivs<- rownames(Y)
+  for (i in 1:length(Predictors)){
+    LosIndivs = intersect(LosIndivs, colnames(Predictors[[i]]))
+  }
+  #LosIndivs
+  NewList<-Predictors
+  
+  #summary(NewList)
+  #rm(Predictors)
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,colnames(NewList[[i]]) %in% LosIndivs]
+  }
+  #sapply(Predictors, dim)
+  #sapply(NewList, dim)
+  
+  
+  # Step2: Match the order
+  LosColnames<-colnames(NewList[[1]])
+  
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,sort(LosColnames) ]
+  }
+  #sapply(NewList, dim)
+  
+  TestdeMatchTable<-unique(matrix(permutations(length(NewList)),ncol=2))
+  
+  for (i in 1:nrow(TestdeMatchTable)) {
+    a=TestdeMatchTable[i,1]
+    b=TestdeMatchTable[i,2]
+    
+    if (all(colnames(NewList[[a]])==colnames(NewList[[b]]))){
+      print(paste("Columns of lists",a,"and",b,"are equally sorted"))
+    } else{
+      print("The colnames are not equally sorted")
+    }
+  }
+  NewList2<-NewList
+  for (i in 1:length(NewList2)) {
+    NewList2[[i]]<-NewList[[i]][,intersect(Samples, colnames(NewList[[i]]) )]
+  }
+  #sapply(NewList, dim)
+  #sapply(NewList2, dim)
+  
+  
+  
+  if (crosval=="LOOCV"){
+    valid="loo"
+  }
+  if (crosval=="TenF"){
+    valid="Mfold"
+  }
+  
+  # Y
+  Y<-t(as.matrix(NewList[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  if (!is.null(ticks)) {
+    tab<-  ClassificationErrorRate (Predictors=NewList2, Response=length(Predictors),Module= "PLSDA",Comps=10,crosval = "LOOCV",Ticks=ticks,Iterations=20)
+  }
+  if (is.null(ticks)) {
+    if (is.null(WhichTicks)) {
+      print("Please insert which ticks you want to calculate")
+    } else {
+      
+      tab<-  ClassificationErrorRate (Predictors=NewList2, Response=length(Predictors),Module= "PLSDA",Comps=10,crosval = "LOOCV",Ticks=NULL, WhichTicks=whichtick,Iterations=20)  
+    }
+    
+  }
+  ######
+  Layers<-tab$Omics
+  ListofMins<-tab$Minimums
+  
+  if(is.null(ticks)){
+    DegreesOfFreedom<-DegFreed
+  } else {
+    DegreesOfFreedom<-ticks-1
+  }
+  
+  SDsas<-StdDev<-list()
+  for(lista in 1:length(ListofMins)){
+    Table<-ListofMins[[lista]]
+    SDtita<-SDTota<-NULL
+    for (row in 1:nrow(Table)){
+      #SDtita<-sd(Table[row,])
+      SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+      SDTota<-rbind(SDTota,SDtita)
+    }
+    #SDTota
+    rownames(SDTota)<-rownames(ListofMins[[1]])
+    nameList<-names(ListofMins[lista])
+    SDsas<-list(SDTota)
+    StdDev[nameList]<-SDsas
+    
+  }
+  ###
+  PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+  rownames(PreSDstable)<-rownames(StdDev[[1]])
+  colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[3,])[,1]
+  
+  for (i in 1: length(StdDev)) {
+    PreSDstable[,i]<-rowMeans(StdDev[[i]])
+  }
+  
+  ###
+  Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+  rownames(Premeanstable)<-rownames(ListofMins[[1]])
+  colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+  
+  for (i in 1: length(ListofMins)) {
+    Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+  }
+  
+  ListofComps<-tab$CompWinner
+  
+  if (Module!="RF") {
+    ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+    for (i in 1: length(ListofComps)) {
+      ToNumListofComps2<-ListofComps[[i]]
+      class(ToNumListofComps2) <- "numeric"
+      for (row in 1:nrow(ToNumListofComps2)){
+        PreCompstabletita<-rowMedians(ToNumListofComps2)
+      }
+      PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+    }
+    rownames(PreCompstable)<-rownames(ListofComps[[1]])
+    colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[3,])[,1]
+    #PreCompstable
+    PreCompstable<-as.data.frame(PreCompstable)
+    ######
+    if (ErrorRateType=="BER"){
+      MeansTable<-Premeanstable[grep("BER",x = rownames(Premeanstable)),,drop=F]
+      SDstable<-PreSDstable[grep("BER",x = rownames(PreSDstable)),,drop=F]
+      Compstable<-PreCompstable[grep("BER",x = rownames(PreCompstable)),,drop=F]
+    } else if (ErrorRateType=="ER") {
+      MeansTable<-Premeanstable[grep("_ER",x = rownames(Premeanstable)),,drop=F]
+      SDstable<-PreSDstable[grep("_ER",x = rownames(PreSDstable)),,drop=F]
+      Compstable<-PreCompstable[grep("_ER",x = rownames(PreCompstable)),,drop=F]
+    } else if (ErrorRateType=="Both") {
+      MeansTable<-Premeanstable
+      SDstable<-PreSDstable
+      Compstable<-PreCompstable
+    }
+    
+    if (MetricsType=="max.dist"){
+      MeansTable2<-MeansTable[grep("max.dist",x = rownames(MeansTable)),,drop=F]
+      SDstable2<-SDstable[grep("max.dist",x = rownames(SDstable)),,drop=F]
+      Compstable2<-Compstable[grep("max.dist",x = rownames(Compstable)),,drop=F]
+    } else if (MetricsType=="centroids") {
+      MeansTable2<-MeansTable[grep("centroids",x = rownames(MeansTable)),,drop=F]
+      SDstable2<-SDstable[grep("centroids",x = rownames(SDstable)),,drop=F]
+      Compstable2<-Compstable[grep("centroids",x = rownames(Compstable)),,drop=F]
+    } else if (MetricsType=="Mahalanobis") {
+      MeansTable2<-MeansTable[grep("ahalanobis",x = rownames(MeansTable)),,drop=F]
+      SDstable2<-SDstable[grep("ahalanobis",x = rownames(SDstable)),,drop=F]
+      Compstable2<-Compstable[grep("ahalanobis",x = rownames(Compstable)),,drop=F]
+    } else if (MetricsType=="All") {
+      MeansTable2<-MeansTable
+      SDstable2<-SDstable
+      Compstable2<-Compstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    Compstable2$Category <- rownames(Compstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    meltedComps<-melt(Compstable2, id.vars="Category")
+    colnames(meltedComps)[3]<-"Comp"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+  } else {
+    if (ErrorRateType=="BER"){
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="ER") {
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="Both") {
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+  }
+  
+  seqdeTicks<-as.numeric(as.character(unique(allmelted$variable)))
+  if (length(seqdeTicks)>1 ){
+    if(!is.null(ticks)) {
+      MinN<-min(as.numeric(as.character(unique(allmelted$variable))))
+      MaxN<-max(as.numeric(as.character(unique(allmelted$variable))))
+      vectdeTicks<-round(seq(from=MinN,to = MaxN,length.out = ticks),digits = 0)
+      ElAusente<-vectdeTicks[!(vectdeTicks %in% seqdeTicks)]
+      
+      Elreemplazito<-Elreemplazo<-NULL
+      for (ab in 1:length(ElAusente)){
+        Elreemplazito<-seqdeTicks[which.min(abs(seqdeTicks - ElAusente[ab])) ]
+        Elreemplazo<-c(Elreemplazo,Elreemplazito)
+      }
+      while (length(Elreemplazo[duplicated(Elreemplazo)])>0) { #print("yes")}
+        Elnuevoreemplazo<-seqdeTicks[seqdeTicks>Elreemplazo[duplicated(Elreemplazo)] & seqdeTicks< Elreemplazo[which(duplicated(Elreemplazo))+1] ]
+        Elreemplazo<-sort(c(unique(Elreemplazo),Elnuevoreemplazo ))  
+      }
+      
+      vectdeTicks2<-vectdeTicks[(vectdeTicks %in% seqdeTicks)]
+      NvectdeTicks<-sort(c(vectdeTicks2,Elreemplazo))
+      allmelted<-allmelted[allmelted$variable %in% NvectdeTicks,]
+      
+      Elreemplazo[duplicated(Elreemplazo)==TRUE]
+      
+      allmelted2<-allmelted
+      for(ro in 1:(dim(allmelted2)[1]-1) ) {
+        #print (ro)
+        if (allmelted2$value[ro+1]>allmelted2$value[ro]) {
+          allmelted2$value[ro+1]<-allmelted2$value[ro]-0.01
+        } else { }
+      }
+    } else {
+      #print ("ticks es NULL")
+      NvectdeTicks<-seqdeTicks
+      allmelted2<-allmelted  
+    }
+    
+  } else {
+    NvectdeTicks<-seqdeTicks
+    allmelted2<-allmelted }
+  #
+  
+  
+  allmelted3<-allmelted2
+  CItita<-CItota<-CI<-NULL
+  CL<-c(90,95,99)
+  Z<-c(1.64,1.96, 2.58)
+  for (zeta in 1:length(Z)) {
+    namecito=paste("CI_",CL[zeta], sep="")
+    for (al in 1:dim(allmelted2)[1]) {
+      M=allmelted2$value[al]
+      SM=sqrt( (allmelted2$StdDev[al])^2/as.numeric(as.character(allmelted2$variable[al]) ) )
+      lower<-round(M-(Z[zeta]* SM),digits=3)
+      upper<-round(M+(Z[zeta]* SM),digits=3)
+      CItita<-cbind(namecito,paste("[",lower," , ",upper,"]", sep="") )
+      CItota<-rbind(CItota,CItita)  
+    }
+    allmelted3[namecito]<-CItota[,2]
+    CItita<-CItota<-NULL
+  }
+  #allmelted3
+  
+  #
+  if (is.null(TheoreticER) ) {
+    MinimumError=min(allmelted3$value)
+  } else{
+    MinimumError=TheoreticER 
+  }
+  
+  
+  #allmelted3
+  
+  
+  ####
+  # for (tiquis in 2:dim(allmelted3)[1]) {
+  #   pedazo<-allmelted3[1:tiquis,]
+  NSegment<-dim(allmelted3)[1]-1
+  Fragment<-paste(as.numeric(as.character((allmelted3$variable))), collapse="_")
+  Category<-allmelted3$Category[dim(allmelted3)[1]]
+  ErrorType<-allmelted3$ErrorRate[dim(allmelted3)[1]]
+  ER_Reached<-allmelted3$value[dim(allmelted3)[1]]
+  MinER<-MinimumError
+  CI_90<-allmelted3$CI_90[dim(allmelted3)[1]]
+  CI_95<-allmelted3$CI_95[dim(allmelted3)[1]]
+  CI_99<-allmelted3$CI_99[dim(allmelted3)[1]]
+  
+  fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 2,df = DegreesOfFreedom), data = allmelted3)
+  ht01 <- seq(min(as.numeric(as.character(allmelted3$variable))),2000, length.out = 2000)
+  prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+  ht01Table<-cbind(ht01,as.data.frame(predict(fm1, data.frame(variable = ht01))));colnames(ht01Table)<-c("ht","ErrorPred")
+  
+  ht <- seq(min(as.numeric(as.character(allmelted3$variable))),max(as.numeric(as.character(allmelted3$variable))), length.out = 200)
+  htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+  
+  NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+  NSampleMax<-dim(NSampleMaxTable)[1]
+  
+  ER_Projected<-round(NSampleMaxTable$ErrorPred[NSampleMax], digits=3)
+  
+  Tabola<-cbind(NSegment,
+                Fragment,
+                Category,
+                ErrorType,
+                ER_Reached,
+                ER_Projected,
+                MinER,
+                CI_90,
+                CI_95,
+                CI_99)
+  #Tabola
+  # AllTERtables<-AllTERtablesSAS<-list()
+  # NamecitoTerTable<-paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")
+  # TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),SamplesReq=round(NSampleMaxTable$ht[NSampleMax]) )  
+  # #AllTERtablesSAS<-list(TERtable)
+  # AllTERtables[[NamecitoTerTable]]<-TERtable
+  
+  res<-list(TestedTicks=NvectdeTicks,Omics=tab$Omics,Minimums=tab$Minimums,CompWinner=tab$CompWinner ,
+            Summary=Tabola,TablebyTick=allmelted3 )
+  
+  return(res)
+}
+
+###########################################################
+PlotPredictionTest<-function (X, Module="PLSDA", ErrorRateType="BER",MetricsType="Mahalanobis",PlotStyle="ggplot",Projection=TRUE,Spline=TRUE, ConfInt=0.95,TheoreticER=NULL,SPfunctionOrder=1, DOF=NULL) {  # Input:
+  # X: Object of class "PredictionTest"
+  # Module: The strategy used to calculate the error rate
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+  #              distance "Mahalanobis" or "All"
+  
+  # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+  #            using "ggplot" or "plotbase" respectively
+  # Projection: solo TRUE, it is to say the plot to project until the TheoreticER value. ##### Esto creo que lo debo anular
+  # Spline: solo TRUE, it is to say to plot the Spline model until TheoreticER value. ##### Esto creo que lo debo anular
+  # TheoreticER: It is the ER value until the model will be projected. If NULL, the ER value is the minimum obtained in the analysis. ##### Esto creo que lo debo anular
+  # ConfInt: Confidence interval calculator. it can be 0.90, 0.95 and 0.99. At the end i am not using it for plotting. ##### Esto creo que lo debo anular
+  ### The ones i believe i must hide
+  # SPfunctionOrder: Order of the Spline function. It indicates the degree of the Smoothing Spline equation 
+  # DOF: Degrees of freedom of the Spline function
+  
+  # Output:
+  # A linechart whth the Spline function as well as the Min ER, the samples required and the Margin of error (MOE)
+  # A table indicating the Min ER, the samples required and the Margin of error (MOE)
+  
+  
+  TestedTicks<-X$TestedTicks
+  Layers<-X$Omics
+  Mins<-X$Minimums
+  CompWin<-X$CompWinner
+  #Min_ER<-X$Min_ER
+  Summary<-X$Summary
+  allmelted3<-X$TablebyTick
+
+    if (is.null(DOF)) { #print ("yes")}
+  DegreesOfFreedom<-dim(allmelted3)[1]-1
+    } else {
+    DegreesOfFreedom=DOF
+    }
+  #
+  if (is.null(TheoreticER) ) {
+    MinimumError=min(allmelted3$value)
+  } else{
+    MinimumError=TheoreticER 
+  }
+  
+  if (ConfInt==0.90){
+    df<-allmelted3[,c(8:10)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_90, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  } 
+  if (ConfInt==0.95) {
+    df<-allmelted3[,c(8:10)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_95, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  }
+  if(ConfInt==0.99){
+    df<-allmelted3[,c(8:10)]
+    df<-lapply (df, function (x) gsub("\\[|\\]","",x))
+    df2<-as.data.frame(strsplit(df$CI_99, split=","))
+    lowers<-as.numeric(as.character(unname(unlist(df2[1,]))))
+    uppers<-as.numeric(as.character(unname(unlist(df2[2,]))))
+  }
+  
+  allmelted3$lower<-lowers
+  allmelted3$upper<-uppers
+  fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = SPfunctionOrder,df = DegreesOfFreedom), data = allmelted3)
+  DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = SPfunctionOrder,df = DegreesOfFreedom), data = allmelted3)
+  ht01 <- seq(min(as.numeric(as.character(allmelted3$variable))),2000, length.out = 2000)
+  prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+  ht01Table<-cbind(ht01,as.data.frame(prediction));colnames(ht01Table)<-c("ht","ErrorPred", "STDpred")
+  NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+  NSampleMax<-dim(NSampleMaxTable)[1]
+  
+  NSampleMaxTable$EplusStd<-NSampleMaxTable$ErrorPred - NSampleMaxTable$STDpred
+  Theplusminustable<-as.data.frame(NSampleMaxTable[NSampleMaxTable[,4]>=MinimumError,])
+  Theplusminus<-round(Theplusminustable$ht[dim(Theplusminustable)[1]])
+  
+  p<-ggplot() + 
+    geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+                  linetype=ErrorRate, color=Metric), allmelted3, size=1) +
+    geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+                      ymin = lower, ymax = upper, color=Metric), allmelted3) +
+    
+    geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+    geom_ribbon(aes(x=as.numeric(as.character(NSampleMaxTable$ht)), color="SPline",
+                    ymin=NSampleMaxTable$ErrorPred-NSampleMaxTable$STDpred,
+                    ymax=NSampleMaxTable$ErrorPred+NSampleMaxTable$STDpred ),data=NSampleMaxTable, alpha=0.2) +
+    
+    ylim(NA,1.1) +
+    ylab("Classification Error Rate") +
+    xlab("Number of Samples") +
+    theme(axis.title=element_text(face="bold",size="14"),
+          axis.text.x = element_text(face="bold", size=18),
+          axis.text.y = element_text(face="bold", size=18),
+          plot.title = element_text(size = "16", face = "bold")
+    ) +
+    ggtitle(paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")) +
+    scale_linetype_manual(values=c("solid", "twodash"))
+  
+  legend <- g_legend(p)
+  grid.newpage()
+  vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+  vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+  subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+  subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+  print(p + theme(legend.position = "none"), vp = vp1)
+  upViewport(0)
+  pushViewport(vpleg)
+  grid.draw(legend)
+  upViewport(0)
+  pushViewport(subvp)
+  rownames(Layers)<-NULL
+  my_table <- tableGrob(Layers) 
+  grid.draw(my_table)
+  
+  
+  TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+                  SamplesReq=round(NSampleMaxTable$ht[NSampleMax]),
+                  MOE= paste("±",round(NSampleMaxTable$ht[NSampleMax]-Theplusminus)) ) 
+  TERtableGrob <- tableGrob(TERtable) 
+  upViewport(0)
+  pushViewport(subvp2)
+  grid.draw(TERtableGrob)
+  
+  AllTERtables<-AllTERtablesSAS<-list()
+  NamecitoTerTable<-paste(length(unique(allmelted3$variable))-1, "segments", sep= " ")
+  TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),SamplesReq=round(NSampleMaxTable$ht[NSampleMax]),
+                  MOE= paste("±",round(NSampleMaxTable$ht[NSampleMax]-Theplusminus))
+  )
+  AllTERtables[[NamecitoTerTable]]<-TERtable
+  res<-list(Min_ER=AllTERtables)
+  return (res)
+}
+
+###########################################################
+###########################################################
+SamplesRequired<-function (x, Module="RF", ErrorRateType="BER",MetricsType="max.dist",TheoreticER=0.1) {
+  # Input:
+  # x: list of tables with the error rates results and the number of components per tick 
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+  #              distance "Mahalanobis" or "All"
+  
+  # TheoreticER: Limit of prediction to calculate the samples required to reach this limit
+  
+  # Output:
+  # A list of tables with the number of samples used and required to reach the Theoretic limit 
+    Layers<-x$Omics
+    ListofMins<-x$Minimums
+    ListofComps<-x$CompWinner
+    
+    SDsas<-StdDev<-list()
+    for(lista in 1:length(ListofMins)){
+      Table<-ListofMins[[lista]]
+      SDtita<-SDTota<-NULL
+      for (row in 1:nrow(Table)){
+        #SDtita<-sd(Table[row,])
+        SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+        SDTota<-rbind(SDTota,SDtita)
+      }
+      #SDTota
+      rownames(SDTota)<-rownames(ListofMins[[1]])
+      nameList<-names(ListofMins[lista])
+      SDsas<-list(SDTota)
+      StdDev[nameList]<-SDsas
+      
+    }
+    ###
+    PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+    rownames(PreSDstable)<-rownames(StdDev[[1]])
+    colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[3,])[,1]
+    
+    for (i in 1: length(StdDev)) {
+      PreSDstable[,i]<-rowMeans(StdDev[[i]])
+    }
+    
+    ###
+    Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+    rownames(Premeanstable)<-rownames(ListofMins[[1]])
+    colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+    
+    for (i in 1: length(ListofMins)) {
+      Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+    }
+    
+    if (Module!="RF") {
+      ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+      for (i in 1: length(ListofComps)) {
+        ToNumListofComps2<-ListofComps[[i]]
+        class(ToNumListofComps2) <- "numeric"
+        for (row in 1:nrow(ToNumListofComps2)){
+          PreCompstabletita<-rowMedians(ToNumListofComps2)
+        }
+        PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+      }
+      rownames(PreCompstable)<-rownames(ListofComps[[1]])
+      colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[3,])[,1]
+      #PreCompstable
+      PreCompstable<-as.data.frame(PreCompstable)
+      ######
+      if (ErrorRateType=="BER"){
+        MeansTable<-Premeanstable[grep("BER",x = rownames(Premeanstable)),]
+        SDstable<-PreSDstable[grep("BER",x = rownames(PreSDstable)),]
+        Compstable<-PreCompstable[grep("BER",x = rownames(PreCompstable)),]
+      } else if (ErrorRateType=="ER") {
+        MeansTable<-Premeanstable[grep("_ER",x = rownames(Premeanstable)),]
+        SDstable<-PreSDstable[grep("_ER",x = rownames(PreSDstable)),]
+        Compstable<-PreCompstable[grep("_ER",x = rownames(PreCompstable)),]
+      } else if (ErrorRateType=="Both") {
+        MeansTable<-Premeanstable
+        SDstable<-PreSDstable
+        Compstable<-PreCompstable
+      }
+      
+      if (MetricsType=="max.dist"){
+        MeansTable2<-MeansTable[grep("max.dist",x = rownames(MeansTable)),]
+        SDstable2<-SDstable[grep("max.dist",x = rownames(SDstable)),]
+        Compstable2<-Compstable[grep("max.dist",x = rownames(Compstable)),]
+      } else if (MetricsType=="centroids") {
+        MeansTable2<-MeansTable[grep("centroids",x = rownames(MeansTable)),]
+        SDstable2<-SDstable[grep("centroids",x = rownames(SDstable)),]
+        Compstable2<-Compstable[grep("centroids",x = rownames(Compstable)),]
+      } else if (MetricsType=="Mahalanobis") {
+        MeansTable2<-MeansTable[grep("ahalanobis",x = rownames(MeansTable)),]
+        SDstable2<-SDstable[grep("ahalanobis",x = rownames(SDstable)),]
+        Compstable2<-Compstable[grep("ahalanobis",x = rownames(Compstable)),]
+      } else if (MetricsType=="All") {
+        MeansTable2<-MeansTable
+        SDstable2<-SDstable
+        Compstable2<-Compstable
+      }
+      MeansTable2$Category <- rownames(MeansTable2)
+      SDstable2$Category <- rownames(SDstable2)
+      Compstable2$Category <- rownames(Compstable2)
+      
+      meltedMeans<-melt(MeansTable2, id.vars="Category")
+      meltedSDs<-melt(SDstable2, id.vars="Category")
+      colnames(meltedSDs)[3]<-"StdDev"
+      meltedComps<-melt(Compstable2, id.vars="Category")
+      colnames(meltedComps)[3]<-"Comp"
+      
+      allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+      allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+      allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+    } else {
+      if (ErrorRateType=="BER"){
+        print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+        MeansTable2<-Premeanstable
+        SDstable2<-PreSDstable
+      } else if (ErrorRateType=="ER") {
+        MeansTable2<-Premeanstable
+        SDstable2<-PreSDstable
+      } else if (ErrorRateType=="Both") {
+        print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+        MeansTable2<-Premeanstable
+        SDstable2<-PreSDstable
+      }
+      MeansTable2$Category <- rownames(MeansTable2)
+      SDstable2$Category <- rownames(SDstable2)
+      
+      meltedMeans<-melt(MeansTable2, id.vars="Category")
+      meltedSDs<-melt(SDstable2, id.vars="Category")
+      colnames(meltedSDs)[3]<-"StdDev"
+      
+      allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+      allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+      allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+    }
+    #
+    AllTERtables<-AllTERtablesSAS<-list()
+    for (tiquis in 2:dim(allmelted)[1]) {
+      pedazo<-allmelted[1:tiquis,]
+      DegreesOfFreedom<-dim(pedazo)[1]-1
+      
+      if (Module!="RF"){
+          
+          if (length(unique(pedazo$Category))>1) {
+            print("This analysis can be performed one Metric at a time")
+          } else {
+          fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+          DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+          ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+          prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+          #head(prediction)
+          MinimumError=0.01
+          NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+          NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction","STDpred")
+          NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+          
+          NamecitoTerTable<-paste(paste(Layers$Omics, collapse = "_"),":",length(unique(pedazo$variable)), "segments, TheoreticER =",TheoreticER, sep= " ")
+          NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+          SamplesRequired<-dim(NeededSampleNumberTable)[1]
+          SamplesUsed<-max(as.numeric(as.character(pedazo$variable)))
+          TERtable<-rbind(SamplesUsed,SamplesRequired)
+          colnames(TERtable)<-max(as.numeric(as.character(pedazo$variable)))
+          AllTERtablesSAS<-list(TERtable)
+          }
+          AllTERtables[NamecitoTerTable]<-AllTERtablesSAS
+        }
+    }
+    TableAllTER <- data.frame(matrix(unlist(AllTERtables),nrow=2,ncol= length(AllTERtables),byrow=F),stringsAsFactors=FALSE)
+    rownames(TableAllTER)<-c("SamplesUsed","SamplesRequired");colnames(TableAllTER)<-seq(1:dim(TableAllTER)[2])
+    return(TableAllTER)
+}
+###########################################################
+#L=SamplesTab2
+PlotSamplesRequired<-function (L, title=NULL){
+  # Input:
+  # L: list of tables obtained from "SamplesRequired" analysis 
+  # title: The title of the figure
+  
+  # Output:
+  # A plot of Samples used vs Samples required with a mean model to facilitate the graph interpretation
+  Metrica<-t(data.frame(cbind("Black Line","Mean behavior") ));rownames(Metrica)<-NULL
+  LosRowNames<-Ltransp1<-Ltransp2<-Ltransp3<-Ltransp4<-NULL
+  Ltransp5<-Ltransp<-list()
+  for (ls in 1:length(L)){
+    Namecito<-names(L[ls])
+    Ltransp1<-t(L[[ls]])
+    Ltransp2<-data.frame(Ltransp1)
+    Ltransp2$Omics<-rep(Namecito, dim(Ltransp2)[1])
+    Ltransp[[Namecito]]<-Ltransp2
+    
+    Ltransp3<-approx (Ltransp2$SamplesUsed,Ltransp2$SamplesRequired,min(Ltransp2$SamplesUsed):max(Ltransp2$SamplesUsed) )
+    class(Ltransp3)
+    Ltransp4 <- data.frame(matrix(unlist(Ltransp3), ncol=2, byrow=F),stringsAsFactors=FALSE)
+    colnames(Ltransp4)<-c("SamplesUsed","SamplesRequired")
+    Ltransp4$Omics<-rep(Namecito,dim(Ltransp4)[1])
+    Ltransp5[[Namecito]]<-Ltransp4
+  }
+  
+  TableAll <- do.call(rbind,Ltransp)
+  TableAllPoints <- do.call(rbind,Ltransp5)
+  head(TableAllPoints)
+  dim(TableAllPoints)
+  TableAllsmall<-TableAllPoints
+  TableAllsmall<-TableAllsmall[,-3]
+  
+  TableAllModel<-setDT(TableAllsmall)[,list(Mean=mean(SamplesRequired), Median=as.numeric(median(SamplesRequired)), Std=sd(SamplesRequired)), by=SamplesUsed]
+  TableAllModel<-setDF(TableAllModel)
+  TableAllModel<-TableAllModel[order(TableAllModel$SamplesUsed),]
+  
+  p<-ggplot() + 
+    geom_line(aes(x=SamplesUsed, y=SamplesRequired, group=Omics,colour = Omics), data = TableAllPoints, size=0.3) +
+    geom_line(aes(x=SamplesUsed, y=Mean), data=TableAllModel, size=1 ) +
+    geom_ribbon(aes(x=SamplesUsed, y=Mean,ymin=Mean-sqrt(Std),ymax=Mean+sqrt(Std) ),data=TableAllModel, alpha=0.3) +  
+    ylab("Samples Required") +
+    xlab("Samples Used") +
+    theme(axis.title=element_text(face="bold",size="14"),
+          axis.text.x = element_text(face="bold", size=18),
+          axis.text.y = element_text(face="bold", size=18),
+          #legend.position="none",
+          plot.title = element_text(size = "16", face = "bold")
+          )  +
+    ggtitle(title)
+   legend <- g_legend(p)
+    grid.newpage()
+    vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+    vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+    subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+    print(p + theme(legend.position = "none"), vp = vp1)
+    upViewport(0)
+    pushViewport(vpleg)
+    grid.draw(legend)
+    upViewport(0)
+    pushViewport(subvp)
+    my_table <- tableGrob(Metrica) 
+    grid.draw(my_table)  
+  
+}
+###########################################################\
+###########################################################
+UntilAllmelted<-function (x, Module="PLSDA", ErrorRateType="BER",MetricsType="Mahalanobis",PlotStyle="ggplot",ticks=FALSE,Projection=FALSE,Spline=TRUE, TheoreticER=NULL) {
+  # Input:
+  # x: list of tables with the error rates results and the number of components per tick 
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+  #              distance "Mahalanobis" or "All"
+  
+  # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+  #            using "ggplot" or "plotbase" respectively
+  
+  # ticks: It can be either FALSE to indicate that all calculated ticks should be plotted or a value
+  #        so less ticks will be plotted. 
+  
+  # Output:
+  # A list of melted tables necessary to compare amongst different analysis in terms of Number of samples vs Classification Error rate
+  
+  Layers<-x$Omics
+  ListofMins<-x$Minimums
+  if(is.null(ticks)){
+    DegreesOfFreedom<-length(ListofMins)-1
+  } else {
+    DegreesOfFreedom<-ticks-1
+  }
+  
+  SDsas<-StdDev<-list()
+  for(lista in 1:length(ListofMins)){
+    Table<-ListofMins[[lista]]
+    SDtita<-SDTota<-NULL
+    for (row in 1:nrow(Table)){
+      #SDtita<-sd(Table[row,])
+      SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+      SDTota<-rbind(SDTota,SDtita)
+    }
+    #SDTota
+    rownames(SDTota)<-rownames(ListofMins[[1]])
+    nameList<-names(ListofMins[lista])
+    SDsas<-list(SDTota)
+    StdDev[nameList]<-SDsas
+    
+  }
+  ###
+  PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+  rownames(PreSDstable)<-rownames(StdDev[[1]])
+  colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[3,])[,1]
+  
+  for (i in 1: length(StdDev)) {
+    PreSDstable[,i]<-rowMeans(StdDev[[i]])
+  }
+  
+  ###
+  Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+  rownames(Premeanstable)<-rownames(ListofMins[[1]])
+  colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+  
+  for (i in 1: length(ListofMins)) {
+    Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+  }
+  
+  ListofComps<-x$CompWinner
+  
+  if (Module!="RF") {
+    ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+    for (i in 1: length(ListofComps)) {
+      ToNumListofComps2<-ListofComps[[i]]
+      class(ToNumListofComps2) <- "numeric"
+      for (row in 1:nrow(ToNumListofComps2)){
+        PreCompstabletita<-rowMedians(ToNumListofComps2)
+      }
+      PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+    }
+    rownames(PreCompstable)<-rownames(ListofComps[[1]])
+    colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[3,])[,1]
+    #PreCompstable
+    PreCompstable<-as.data.frame(PreCompstable)
+    ######
+    if (ErrorRateType=="BER"){
+      MeansTable<-Premeanstable[grep("BER",x = rownames(Premeanstable)),]
+      SDstable<-PreSDstable[grep("BER",x = rownames(PreSDstable)),]
+      Compstable<-PreCompstable[grep("BER",x = rownames(PreCompstable)),]
+    } else if (ErrorRateType=="ER") {
+      MeansTable<-Premeanstable[grep("_ER",x = rownames(Premeanstable)),]
+      SDstable<-PreSDstable[grep("_ER",x = rownames(PreSDstable)),]
+      Compstable<-PreCompstable[grep("_ER",x = rownames(PreCompstable)),]
+    } else if (ErrorRateType=="Both") {
+      MeansTable<-Premeanstable
+      SDstable<-PreSDstable
+      Compstable<-PreCompstable
+    }
+    
+    if (MetricsType=="max.dist"){
+      MeansTable2<-MeansTable[grep("max.dist",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("max.dist",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("max.dist",x = rownames(Compstable)),]
+    } else if (MetricsType=="centroids") {
+      MeansTable2<-MeansTable[grep("centroids",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("centroids",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("centroids",x = rownames(Compstable)),]
+    } else if (MetricsType=="Mahalanobis") {
+      MeansTable2<-MeansTable[grep("ahalanobis",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("ahalanobis",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("ahalanobis",x = rownames(Compstable)),]
+    } else if (MetricsType=="All") {
+      MeansTable2<-MeansTable
+      SDstable2<-SDstable
+      Compstable2<-Compstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    Compstable2$Category <- rownames(Compstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    meltedComps<-melt(Compstable2, id.vars="Category")
+    colnames(meltedComps)[3]<-"Comp"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+  } else {
+    if (ErrorRateType=="BER"){
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="ER") {
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="Both") {
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+  }
+  #
+  
+  if (ticks) { #print ("yes") }
+    seqdeTicks<-as.numeric(as.character(unique(allmelted$variable)))
+    MinN<-min(as.numeric(as.character(unique(allmelted$variable))))
+    MaxN<-max(as.numeric(as.character(unique(allmelted$variable))))
+    vectdeTicks<-round(seq(from=MinN,to = MaxN,length.out = ticks),digits = 0)
+    ElAusente<-vectdeTicks[!(vectdeTicks %in% seqdeTicks)]
+    
+    Elreemplazito<-Elreemplazo<-NULL
+    for (ab in 1:length(ElAusente)){
+      Elreemplazito<-seqdeTicks[which.min(abs(seqdeTicks - ElAusente[ab])) ]
+      Elreemplazo<-c(Elreemplazo,Elreemplazito)
+    }
+    while (length(Elreemplazo[duplicated(Elreemplazo)])>0) { #print("yes")}
+      Elnuevoreemplazo<-seqdeTicks[seqdeTicks>Elreemplazo[duplicated(Elreemplazo)] & seqdeTicks< Elreemplazo[which(duplicated(Elreemplazo))+1] ]
+      Elreemplazo<-sort(c(unique(Elreemplazo),Elnuevoreemplazo ))  
+    }
+    
+    vectdeTicks2<-vectdeTicks[(vectdeTicks %in% seqdeTicks)]
+    NvectdeTicks<-sort(c(vectdeTicks2,Elreemplazo))
+    allmelted<-allmelted[allmelted$variable %in% NvectdeTicks,]
+  }
+  Elreemplazo[duplicated(Elreemplazo)==TRUE]
+  return (allmelted)
+}
+
+
+
+###########################################################
+PlotAllMeltedList<-function (L){
+  # Input:
+  # L: list of tables obtained from "UntilAllmelted" analysis 
+  
+  # Output:
+  # A plot of number of samples vs Classification Error Rate in order to compare and evaluate different analyzes
+  
+  LosRowNames<-Ltransp1<-Ltransp2<-Ltransp3<-Ltransp4<-NULL
+  Ltransp5<-Ltransp<-list()
+  for (ls in 1:length(L)){
+    Namecito<-names(L[ls])
+    Ltransp1<-data.frame(L[[ls]])
+    Ltransp1$Omics<-rep(Namecito, dim(Ltransp1)[1])
+    Ltransp[[Namecito]]<-Ltransp1
+  }
+  
+  TableAll <- do.call(rbind,Ltransp)
+  Metrica<-t(data.frame(cbind(unique(TableAll$Metric),unique(TableAll$ErrorRate))))
+  rownames(Metrica)<-NULL
+  p<-ggplot() + 
+    geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Omics,colour = Omics), data = TableAll, size=1) +
+    geom_errorbar(aes(x=as.numeric(as.character(variable)),group=Omics ,
+                      ymin = value - StdDev, ymax = value + StdDev, color=Omics), TableAll) +
+    #ylim(NA,1.1) +
+    #ylim(min(TableAllModel2$Median),max(TableAllModel2$Median)) +
+    #xlim(min(TableAllModel2$x),max(TableAllModel2$x)) +
+    ylab("Classification Error Rate") +
+    xlab("Number of Samples") +
+    theme(axis.title=element_text(face="bold",size="14"),
+          axis.text.x = element_text(face="bold", size=18),
+          axis.text.y = element_text(face="bold", size=18),
+          plot.title = element_text(size = "16", face = "bold")
+    ) +
+    ggtitle(paste(length(unique(allmelted$variable)), "segments", sep= " "))
+    
+  legend <- g_legend(p)
+  grid.newpage()
+  vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+  vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+  subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+  print(p + theme(legend.position = "none"), vp = vp1)
+  upViewport(0)
+  pushViewport(vpleg)
+  grid.draw(legend)
+  upViewport(0)
+  pushViewport(subvp)
+  my_table <- tableGrob(Metrica) 
+  grid.draw(my_table)  
+}
+###########################################################
+PredictiveSummary<-function (x, Module="PLSDA", ErrorRateType="BER",MetricsType="Mahalanobis") {
+  # Input:
+  # x: list of tables with the error rates results and the number of components per tick 
+  # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+  #                balanced error rate "BER" or "Both"
+  # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+  #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+  #              distance "Mahalanobis" or "All"
+  
+  # TheoreticER: Limit of prediction to calculate the samples required to reach this limit
+  
+  # Output:
+  # A list of tables with the number of samples used and required to reach the Theoretic limit 
+  Layers<-x$Omics
+  ListofMins<-x$Minimums
+  ListofComps<-x$CompWinner
+  
+  SDsas<-StdDev<-list()
+  for(lista in 1:length(ListofMins)){
+    Table<-ListofMins[[lista]]
+    SDtita<-SDTota<-NULL
+    for (row in 1:nrow(Table)){
+      #SDtita<-sd(Table[row,])
+      SDtita<-sd(Table[row,]) /sqrt(ncol(Table)) # This is actually the Standard error of the mean
+      SDTota<-rbind(SDTota,SDtita)
+    }
+    #SDTota
+    rownames(SDTota)<-rownames(ListofMins[[1]])
+    nameList<-names(ListofMins[lista])
+    SDsas<-list(SDTota)
+    StdDev[nameList]<-SDsas
+    
+  }
+  ###
+  PreSDstable<-data.frame(matrix(data=NA,nrow=nrow(StdDev[[1]]),ncol = length(StdDev)))
+  rownames(PreSDstable)<-rownames(StdDev[[1]])
+  colnames(PreSDstable)<-t(data.frame(strsplit(names(StdDev),split=" "))[3,])[,1]
+  
+  for (i in 1: length(StdDev)) {
+    PreSDstable[,i]<-rowMeans(StdDev[[i]])
+  }
+  
+  ###
+  Premeanstable<-data.frame(matrix(data=NA,nrow=nrow(ListofMins[[1]]),ncol = length(ListofMins)))
+  rownames(Premeanstable)<-rownames(ListofMins[[1]])
+  colnames(Premeanstable)<-t(data.frame(strsplit(names(ListofMins),split=" "))[3,])[,1]
+  
+  for (i in 1: length(ListofMins)) {
+    Premeanstable[,i]<-rowMeans(ListofMins[[i]])
+  }
+  
+  if (Module!="RF") {
+    ToNumListofComps2<-PreCompstabletita<-PreCompstable<-NULL
+    for (i in 1: length(ListofComps)) {
+      ToNumListofComps2<-ListofComps[[i]]
+      class(ToNumListofComps2) <- "numeric"
+      for (row in 1:nrow(ToNumListofComps2)){
+        PreCompstabletita<-rowMedians(ToNumListofComps2)
+      }
+      PreCompstable<-cbind(PreCompstable,PreCompstabletita)
+    }
+    rownames(PreCompstable)<-rownames(ListofComps[[1]])
+    colnames(PreCompstable)<-t(data.frame(strsplit(names(ListofComps),split=" "))[3,])[,1]
+    #PreCompstable
+    PreCompstable<-as.data.frame(PreCompstable)
+    ######
+    if (ErrorRateType=="BER"){
+      MeansTable<-Premeanstable[grep("BER",x = rownames(Premeanstable)),]
+      SDstable<-PreSDstable[grep("BER",x = rownames(PreSDstable)),]
+      Compstable<-PreCompstable[grep("BER",x = rownames(PreCompstable)),]
+    } else if (ErrorRateType=="ER") {
+      MeansTable<-Premeanstable[grep("_ER",x = rownames(Premeanstable)),]
+      SDstable<-PreSDstable[grep("_ER",x = rownames(PreSDstable)),]
+      Compstable<-PreCompstable[grep("_ER",x = rownames(PreCompstable)),]
+    } else if (ErrorRateType=="Both") {
+      MeansTable<-Premeanstable
+      SDstable<-PreSDstable
+      Compstable<-PreCompstable
+    }
+    
+    if (MetricsType=="max.dist"){
+      MeansTable2<-MeansTable[grep("max.dist",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("max.dist",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("max.dist",x = rownames(Compstable)),]
+    } else if (MetricsType=="centroids") {
+      MeansTable2<-MeansTable[grep("centroids",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("centroids",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("centroids",x = rownames(Compstable)),]
+    } else if (MetricsType=="Mahalanobis") {
+      MeansTable2<-MeansTable[grep("ahalanobis",x = rownames(MeansTable)),]
+      SDstable2<-SDstable[grep("ahalanobis",x = rownames(SDstable)),]
+      Compstable2<-Compstable[grep("ahalanobis",x = rownames(Compstable)),]
+    } else if (MetricsType=="All") {
+      MeansTable2<-MeansTable
+      SDstable2<-SDstable
+      Compstable2<-Compstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    Compstable2$Category <- rownames(Compstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    meltedComps<-melt(Compstable2, id.vars="Category")
+    colnames(meltedComps)[3]<-"Comp"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev,Comp=meltedComps$Comp)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]
+  } else {
+    if (ErrorRateType=="BER"){
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate, just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="ER") {
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    } else if (ErrorRateType=="Both") {
+      print ("Balanced Error Rate does not apply for Random Forest Out_Of_Bag Error rate,just ER will be showed")
+      MeansTable2<-Premeanstable
+      SDstable2<-PreSDstable
+    }
+    MeansTable2$Category <- rownames(MeansTable2)
+    SDstable2$Category <- rownames(SDstable2)
+    
+    meltedMeans<-melt(MeansTable2, id.vars="Category")
+    meltedSDs<-melt(SDstable2, id.vars="Category")
+    colnames(meltedSDs)[3]<-"StdDev"
+    
+    allmelted<-cbind(meltedMeans,StdDev=meltedSDs$StdDev)
+    allmelted$ErrorRate<-t(data.frame(strsplit(allmelted$Category, split="_"))[2,])[,1]
+    allmelted$Metric<-t(data.frame(strsplit(allmelted$Category, split="_"))[1,])[,1]  
+  }
+  allmelted2<-allmelted
+  for(ro in 1:(dim(allmelted2)[1]-1) ) {
+    #print (ro)
+    if (allmelted2$value[ro+1]>allmelted2$value[ro]) {
+      allmelted2$value[ro+1]<-allmelted2$value[ro]-0.01
+    } else{}
+  }
+  
+  #
+  MinimumError=min(allmelted2$value)
+  samplesrequired<-NULL
+  for (tiquis in 2:dim(allmelted2)[1]) {
+    pedazo<-allmelted2[1:tiquis,]
+    DegreesOfFreedom<-dim(pedazo)[1]-1
+    
+    if (Module!="RF"){
+      
+      if (length(unique(pedazo$Category))>1) {
+        print("This analysis can be performed one Metric at a time")
+      } else {
+        fm1 <- lm(value ~ bs(as.numeric(as.character(variable)),degree = 1, df = DegreesOfFreedom), data = pedazo)
+        DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+        ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+        ht01Table<-cbind(ht01,as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))) ));colnames(ht01Table)<-c("ht","ErrorPred","STDpred" )
+        
+        NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+        NSampleMax<-round(as.numeric(as.character(NSampleMaxTable[dim(NSampleMaxTable)[1],1])))
+      }
+    }
+    samplesrequired<-c(samplesrequired,NSampleMax)
+  }
+  samplesrequired<-c(0,samplesrequired)
+  samplesrequired[length(samplesrequired)]<-as.numeric(as.character(allmelted2$variable[dim(allmelted2)[1]]))
+  
+  allmelted2$SamplesRequired<-samplesrequired
+  allmelted2$Difference<-as.numeric(as.character(allmelted2$SamplesRequired)) - as.numeric(as.character(allmelted2$variable[dim(allmelted2)[1]]))
+  allmelted2$MinER<-rep(MinimumError,dim(allmelted2)[1])
+  allmelted2$Proportions<-round((as.numeric(as.character(allmelted2$variable)) * 100)/as.numeric(as.character(allmelted2$variable[dim(allmelted2)[1]])))
+  
+  allmelted3<-allmelted2[-1,c(6,7,2,3,10,8,9,11)]
+  
+  return(allmelted3)
+}
+###########################################################
+###########################################################
+# MultiPlotbyTick<-function (MeltedLists, PlotStyle="ggplot",Projection=FALSE,Spline=TRUE, TheoreticER=NULL) {
+#   # Input:
+#   # x: list of tables with the error rates results and the number of components per tick 
+#   # ErrorRateType: Character to indicate which error rate to plot. It can be error rate "ER", 
+#   #                balanced error rate "BER" or "Both"
+#   # MetricsType: Character to indicate the metrics to be plotted. It can be Maximal 
+#   #              distance "max.dist", distance to centroids "centroids", Mahalanobis 
+#   #              distance "Mahalanobis" or "All"
+#   
+#   # PlotStyle: The style of the plot. You can choose a ggplot style or a base style 
+#   #            using "ggplot" or "plotbase" respectively
+#   
+#   # ticks: It can be either FALSE to indicate that all calculated ticks should be plotted or a value
+#   #        so less ticks will be plotted. 
+#   
+#   # Output:
+#   # Linecharts with standard deviation by increased number of ticks to evaluate the prediction strength
+#   
+#   #MeltedLists
+#   segments<-dim(MeltedLists[[1]])[1]
+#   mtabSAS<-meltedTtab<-list()
+#   for(lst in 1:length(MeltedLists)){
+#     namecito<-names(MeltedLists[lst])
+#     mtab<-MeltedLists[[lst]]
+#     mtab$Omics<-rep(namecito, dim(mtab)[1]) 
+#     for(ro in 1:(dim(mtab)[1]-1) ) {
+#       #print (ro)
+#       if (mtab$value[ro+1]>mtab$value[ro]) {
+#           mtab$value[ro+1]<-mtab$value[ro]-0.01
+#       } else{}
+#     }
+#     mtabSAS<-list(mtab)
+#     meltedTtab[namecito]<-mtabSAS
+#   }
+#   
+#   TableAll <- do.call(rbind,meltedTtab)
+#   Metrica<-t(data.frame(cbind(unique(TableAll$Metric),unique(TableAll$ErrorRate))))
+#   rownames(Metrica)<-NULL
+#   
+#   minstable<-minstableita<-NULL
+#   for (om in 1:length(unique(TableAll$Omics))) {
+#     #print (unique(TableAll$Omics)[om])
+#     laomica<-unique(TableAll$Omics)[om]
+#     minERLO<-as.numeric(as.character(min(TableAll$value[TableAll$Omics==laomica])))
+#     minstableita<-c(laomica,minERLO)
+#     minstable<-rbind(minstable,minstableita)
+#   }
+#   rownames(minstable)<-seq(1:dim(minstable)[1]);colnames(minstable)<-c("Omics", "Min_ER")
+#   minstable<-data.frame(minstable)
+#   minstable$Min_ER<-as.numeric(as.character(minstable$Min_ER))
+#   
+#   #
+#   TableAll
+#   for (tiquis in 2:segments ) {
+#     
+#     pedazo<-TableAll %>%
+#       group_by(Omics) %>%
+#       filter(row_number() <= tiquis)
+#     DegreesOfFreedom<-dim(pedazo)[1]-1
+#     print(pedazo)
+#     
+#     ### PrePlot
+#     fm1 <- lm(value ~ bs(as.numeric(as.character(variable)),degree = 1, df = DegreesOfFreedom), data = pedazo)
+#     #fm1 <- lm(value ~ ns(as.numeric(as.character(variable)), df = DegreesOfFreedom), data = allmelted)
+#     ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#     #prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#     ht01Table<-cbind(ht01,as.data.frame(predict(fm1, data.frame(variable = ht01))));colnames(ht01Table)<-c("ht","ErrorPred")
+#     ht <- seq(min(as.numeric(as.character(pedazo$variable))),max(as.numeric(as.character(pedazo$variable))), length.out = 200)
+#     htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+#     
+#     
+#     ###PAVPAVPAV
+#     
+#     if (TheoreticER) {
+#       MinimumError=TheoreticER
+#     } else {
+#       MinimumError=0.01
+#     }
+#     
+#     if (MinimumError<min(ht01Table[,2])) {
+#       ht01Table<-ht01Table
+#     } else {
+#       a=1
+#       while (ht01Table[a,2]>=MinimumError) {
+#         elrowname<-as.numeric(rownames(ht01Table)[a])
+#         a=a+1
+#       }
+#       ht01Table<-as.data.frame(ht01Table[as.numeric(rownames(ht01Table))<=elrowname,])
+#     }
+#     
+#     #elrowname
+#     ht01Table<-as.data.frame(ht01Table[as.numeric(rownames(ht01Table))<=elrowname,])
+#     NSampleMaxTable<-as.data.frame(ht01Table[as.numeric(rownames(ht01Table))<=elrowname, ] )
+#     NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("n","ht","ErrorPred")
+#     NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#     
+#     if (MinimumError<min(htTable[,2])) {
+#       htTable<-htTable
+#     } else {
+#       b=1
+#       while (htTable[b,2]>=MinimumError) {
+#         elrowname<-as.numeric(rownames(htTable)[b])
+#         b=b+1
+#       }
+#       htTable<-as.data.frame(htTable[as.numeric(rownames(htTable))<=elrowname,])
+#     }
+#     
+#     
+#       
+#      p<-ggplot() + 
+#       geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Omics,colour = Omics), data = pedazo, size=1) +
+#       geom_errorbar(aes(x=as.numeric(as.character(variable)),group=Omics ,
+#                         ymin = value - StdDev, ymax = value + StdDev, color=Omics), pedazo) +
+#       #ylim(NA,1.1) +
+#       #ylim(min(TableAllModel2$Median),max(TableAllModel2$Median)) +
+#       #xlim(min(TableAllModel2$x),max(TableAllModel2$x)) +
+#       ylab("Classification Error Rate") +
+#       xlab("Number of Samples") +
+#       theme(axis.title=element_text(face="bold",size="14"),
+#             axis.text.x = element_text(face="bold", size=18),
+#             axis.text.y = element_text(face="bold", size=18),
+#             plot.title = element_text(size = "16", face = "bold")
+#       ) +
+#       ggtitle(paste((length(pedazo$Omics)/length(unique(pedazo$Omics)))-1, "segments", sep= " "))
+#     
+#     legend <- g_legend(p)
+#     grid.newpage()
+#     vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#     vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#     subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#     print(p + theme(legend.position = "none"), vp = vp1)
+#     upViewport(0)
+#     pushViewport(vpleg)
+#     grid.draw(legend)
+#     upViewport(0)
+#     pushViewport(subvp)
+#     my_table <- tableGrob(Metrica) 
+#     grid.draw(my_table)  
+#     
+#     
+#     
+#       
+#   }
+#  
+#     
+#     if (PlotStyle=="ggplot") {
+#       if (Module!="RF"){
+#         if (length(unique(pedazo$Category))>1) {
+#           p<-ggplot(pedazo, aes(x=variable, y= value, group=Category)) +
+#             geom_line(aes(linetype=ErrorRate, color=Metric), size=1) + 
+#             #ylim(NA,1.1) +
+#             ylab("Classification Error Rate") +
+#             xlab("Number of Samples") +
+#             theme(axis.title=element_text(face="bold",size="14"),
+#                   axis.text.x = element_text(face="bold", size=18),
+#                   axis.text.y = element_text(face="bold", size=18),
+#                   plot.title = element_text(size = "16", face = "bold")
+#             ) +
+#             ggtitle(paste(length(unique(allmelted$variable)), "segments", sep= " ")) +
+#             scale_linetype_manual(values=c("solid", "twodash"))+
+#             #geom_text(aes(allmelted$Comp))+
+#             geom_errorbar(aes(ymin = value - StdDev,
+#                               ymax = value + StdDev, color=Metric))
+#           legend <- g_legend(p)
+#           grid.newpage()
+#           vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#           vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#           subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#           print(p + theme(legend.position = "none"), vp = vp1)
+#           upViewport(0)
+#           pushViewport(vpleg)
+#           grid.draw(legend)
+#           upViewport(0)
+#           pushViewport(subvp)
+#           my_table <- tableGrob(Layers) 
+#           grid.draw(my_table)
+#         } else {
+#           if (Projection==TRUE & Spline==FALSE){
+#             Spline=TRUE
+#             print("Since Projection==TRUE, the Spline will be plotted")
+#           }
+#           if (Projection==FALSE & Spline==FALSE){
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#           }
+#           if (Projection==FALSE & Spline==TRUE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)),degree = 1, df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             head(prediction)
+#             ht <- seq(min(as.numeric(as.character(pedazo$variable))),max(as.numeric(as.character(pedazo$variable))), length.out = 200)
+#             htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+#             
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=htTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             if (!is.null(TheoreticER)) {
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#             }
+#           }
+#           
+#           if (Projection==TRUE & Spline==TRUE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+#             head(prediction)
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction","STDpred")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+#               geom_ribbon(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline",ymin=Prediction-1.96*STDpred,ymax=Prediction+1.96*STDpred ),data=NSampleMaxTable, alpha=0.2) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             
+#             AllTERtables<-AllTERtablesSAS<-list()
+#             if (!is.null(TheoreticER)) {
+#               NamecitoTerTable<-paste(length(unique(pedazo$variable)), "segments", sep= " ")
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#               colnames(TERtable)<-length(unique(pedazo$variable))
+#             }
+#             AllTERtablesSAS<-list(TERtable)
+#           }
+#         }
+#         AllTERtables[NamecitoTerTable]<-AllTERtablesSAS
+#       } else { #### If Module is RF
+#         
+#         if (Spline==FALSE){
+#           if (Projection==TRUE){
+#             Spline=TRUE
+#             print("Since Projection==TRUE, the Spline will be plotted")
+#           }
+#           if (Projection==FALSE){
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#           }
+#         }
+#         if (Spline==TRUE){
+#           if (Projection==FALSE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             ht <- seq(min(as.numeric(as.character(pedazo$variable))),max(as.numeric(as.character(pedazo$variable))), length.out = 200)
+#             htTable<-cbind(ht,as.data.frame(predict(fm1, data.frame(variable = ht))));colnames(htTable)<-c("ht","ErrorPred")
+#             
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=ht, y=ErrorPred,color="SPline"), data=htTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             if (!is.null(TheoreticER)) {
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#             }
+#           }
+#           if (Projection==TRUE){
+#             fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = pedazo)
+#             ht01 <- seq(min(as.numeric(as.character(pedazo$variable))),2000, length.out = 2000)
+#             prediction<-as.data.frame(predict(fm1, data.frame(variable = ht01)));colnames(prediction)<-"Prediction"
+#             head(prediction)
+#             MinimumError=0.01
+#             NSampleMaxTable<-as.data.frame(prediction[prediction[,1]>=MinimumError,])
+#             NSampleMaxTable<-data.frame(rownames(NSampleMaxTable),NSampleMaxTable);colnames(NSampleMaxTable)<-c("x","Prediction")
+#             NSampleMax<-max(as.numeric(as.character(rownames(NSampleMaxTable))))
+#             
+#             p<-ggplot() + 
+#               geom_line(aes(x=as.numeric(as.character(variable)), y=value, group=Category,
+#                             linetype=ErrorRate, color=Metric), pedazo, size=1) +
+#               geom_errorbar(aes(x=as.numeric(as.character(variable)), group=Category,
+#                                 ymin = value - StdDev, ymax = value + StdDev, color=Metric), pedazo) +
+#               geom_line(aes(x=as.numeric(as.character(x)), y=Prediction,color="SPline"), data=NSampleMaxTable, size=1.3 ) +
+#               #ylim(NA,1.1) +
+#               ylab("Classification Error Rate") +
+#               xlab("Number of Samples") +
+#               theme(axis.title=element_text(face="bold",size="14"),
+#                     axis.text.x = element_text(face="bold", size=18),
+#                     axis.text.y = element_text(face="bold", size=18),
+#                     plot.title = element_text(size = "16", face = "bold")
+#               ) +
+#               ggtitle(paste(length(unique(pedazo$variable)), "segments", sep= " ")) +
+#               scale_linetype_manual(values=c("solid", "twodash"))
+#             
+#             legend <- g_legend(p)
+#             grid.newpage()
+#             vp1 <- viewport(width = 0.75, height = 1, x = 0.375, y = .5)
+#             vpleg <- viewport(width = 0.25, height = 0.5, x = 0.85, y = 0.75)
+#             subvp <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.5)
+#             subvp2 <- viewport(width = 0.3, height = 0.3, x = 0.85, y = 0.25)
+#             print(p + theme(legend.position = "none"), vp = vp1)
+#             upViewport(0)
+#             pushViewport(vpleg)
+#             grid.draw(legend)
+#             upViewport(0)
+#             pushViewport(subvp)
+#             my_table <- tableGrob(Layers) 
+#             grid.draw(my_table)
+#             if (!is.null(TheoreticER)) {
+#               NeededSampleNumberTable<-as.data.frame(NSampleMaxTable [NSampleMaxTable[,2]>=TheoreticER,])
+#               SamplesRequired<-dim(NeededSampleNumberTable)[1]
+#               TERtable<-rbind(TheoreticER,SamplesRequired)
+#               TERtableGrob <- tableGrob(TERtable) 
+#               upViewport(0)
+#               pushViewport(subvp2)
+#               grid.draw(TERtableGrob)
+#             }
+#           }
+#         }
+#       } # End of Module RF
+#     }
+#   }
+#   return(AllTERtables)
+# }
+
+###########################################################
+# RequiredtimeTest
+RequiredtimeTest<-function (Predictors, Response, Comps = 10, Function,crosval = "LOOCV",Ticks = 20,ERIterations = 20,LassoIterations=50,cpus_per_node=1, ...) {
+  
+  components=Comps
+  print("Calculating the estimated time required for the classification analysis")
+  Omics<-data.frame(Omics=names(Predictors[-Response]))
+  Omics2<-paste(Omics$Omics,collapse="_")
+  TestSumm<-data.frame(Omics=Omics2,CrossValidation=crosval,Ticks = Ticks,ERIterations=ERIterations,LassoIterations=LassoIterations,CPUs=cpus_per_node)
+  rep<-length(Predictors)-1
+  NewList<-Predictors
+  NewList<-NewList[-Response]
+  #sapply(NewList,dim)
+  if (length(NewList)>1){
+    tabe<-data.frame(sapply(NewList,dim))
+    wti<-as.numeric(tabe[2,][apply(tabe[2,],1,which.min)])
+    
+  } else {
+    tabe<-data.frame(sapply(NewList,dim))
+    wti<-as.numeric(tabe[2,])
+    }
+  TPLSDA<-t(data.frame(summary(system.time(capture.output(ProtsPLSDA<-ClassificationErrorRate(Predictors=Predictors,Response=Response,Comps = components,
+                                                                                              Function=Function,
+                                                                                              crosval = crosval,Ticks = NULL,WhichTicks = wti,ERIterations = 1,LassoIterations = 1)  )))))
+  # TPLSDA<-t(data.frame(summary(system.time(ProtsPLSDA<-ClassificationErrorRate(Predictors=Predictors,Response=Response,Comps = components,
+  #                                                                                             Function=Function,
+  #                                                                                             crosval = crosval,Ticks = NULL,WhichTicks = wti,ERIterations = 1,LassoIterations = 1)  ))))
+  
+  TEval<-(2 + TPLSDA[,3]*ERIterations*LassoIterations*Ticks*rep)/cpus_per_node
+  
+  template<-c("seconds","minutes","hours","days")
+  Result<-c(round(TEval, digits=3),round(TEval/60, digits=3),round(TEval/3600, digits=3),
+                round(TEval/86400, digits=3))
+  Result2<-as.data.frame(cbind(Result,template))
+      
+      res<-list(Summary=TestSumm,EstimatedTime=Result2)
+      
+      return(res)
+      
+}
+
+###########################################################
+# ER_Adder (Predictors=tcgadata[c(4,6)],Response=2,Function=Random.Forest.MP,
+#           Previous_CER=ProtsRF,
+#           Ticks=5,
+#           WhichTicks=NULL,Function=Random.Forest.MP,Comps=10,crosval = "LOOCV",ERIterations=15,LassoIterations=15)
+
+ER_Adder<-function(Predictors, Response=length(Predictors),Previous_CER,Ticks=5,WhichTicks=NULL,Function=Random.Forest.MP,Comps=10,crosval = "LOOCV",ERIterations=2,LassoIterations=2) {
+  
+  #
+  #  
+  #
+  #
+  #
+  #
+  
+  if (! is.list(Predictors) ) {
+    stop("\\nOmics dataset must be a list with at least two elements")
+  }
+  ###########
+  # Y
+  Y<-t(as.matrix(Predictors[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  if (ncol(Y) != 1) {
+    stop("\\nResponse must be a single variable")
+  }
+  if (any(is.na(Y))) {
+    stop("\\nResponse must not contain missing values")
+  }
+  if (is.null(colnames(Y))) {
+    colnames(Y) = "Y"
+  }
+  if (is.null(rownames(Y))) {
+    rownames(Y) = 1:n
+  }
+  # Step1: Match the sample size
+  LosIndivs<- rownames(Y)
+  for (i in 1:length(Predictors)){
+    LosIndivs = intersect(LosIndivs, colnames(Predictors[[i]]))
+  }
+  #LosIndivs
+  print(paste("This analysis will be performed with",length(LosIndivs),"samples, since those are the ones repeated in all layers"))
+  
+  NewList<-Predictors
+  
+  #summary(NewList)
+  #rm(Predictors)
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,colnames(NewList[[i]]) %in% LosIndivs]
+  }
+  #sapply(Predictors, dim)
+  #sapply(NewList, dim)
+  
+  ###########
+  # Step2: Match the order
+  LosColnames<-colnames(NewList[[1]])
+  
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,sort(LosColnames) ]
+  }
+  #sapply(NewList, dim)
+  
+  TestdeMatchTable<-unique(matrix(permutations(length(NewList)),ncol=2))
+  
+  for (i in 1:nrow(TestdeMatchTable)) {
+    a=TestdeMatchTable[i,1]
+    b=TestdeMatchTable[i,2]
+    
+    if (all(colnames(NewList[[a]])==colnames(NewList[[b]]))){
+      print(paste("Columns of lists",a,"and",b,"are equally sorted"))
+    } else{
+      print("The colnames are not equally sorted")
+    }
+  }
+  if (crosval=="LOOCV"){
+    valid="loo"
+  }
+  if (crosval=="TenF"){
+    valid="Mfold"
+  }
+  
+  # Y
+  Y<-t(as.matrix(NewList[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  
+  #########
+  Omics<-data.frame(Omics=names(NewList[-Response]))
+  if(Previous_CER$Omics!=Omics){
+    print("Make sure The previous analysis is the same as the new one")
+    break  
+  }
+  
+  MinN<-round(length(table(as.factor(Y[,1]))) * 2, digits = 0)
+  MaxN<-nrow(Y)
+  Ngroups<-length(table(as.factor(Y[,1])))
+  if(!is.null(Ticks)) {
+    vectTicks<-round(seq(from=MinN,to = MaxN,length.out = Ticks),digits = 0)
+  } else {
+    if (is.null(WhichTicks)) {
+      print("Please insert which ticks you want to calculate")
+    } else {
+      vectTicks<-WhichTicks
+    }
+  }
+  
+  howmany<-length(vectTicks)
+  already<-length(Previous_CER$TestedTicks)
+  
+  WhichTicks<-c(setdiff(as.vector(vectTicks),as.vector(Previous_CER$TestedTicks) ))
+  WhichTicks<-sort(sample(WhichTicks,size = (howmany-already), replace = FALSE ))
+  
+  ######
+  tab<-  ClassificationErrorRate (Predictors=Predictors, Response=length(Predictors),
+                                  Comps=Comps,crosval = crosval,ERIterations=ERIterations,
+                                  LassoIterations=LassoIterations,Ticks=NULL, 
+                                  WhichTicks=WhichTicks,Function = Function)
+  ####### Ahora Fusionar
+  Previous_CER
+  ttdticks<-sort(c(tab$TestedTicks,Previous_CER$TestedTicks))
+  
+  tbyticks<-rbind(tab$TablebyTick,Previous_CER$TablebyTick)
+  tbyticks<-tbyticks[order(as.numeric(as.character(tbyticks$variable))),]
+  rownames(tbyticks)<-seq(1:dim(tbyticks)[1])
+  orden<-as.numeric(as.character(tbyticks$variable))
+  
+  orden2<-paste(orden,"samples", sep=" ")
+  orden2
+  
+  om<-as.data.frame(tab$Omics, drop=F)
+  Omics<-om
+  lstdeMins<-append(tab$Minimums,Previous_CER$Minimums)
+  
+  lstdeMins<-lstdeMins[match(orden2,names(lstdeMins))]
+  
+  if (!is.null(tab$CompWinner)) {
+    lstdewinners<-append(tab$Minimums,Previous_CER$Minimums)
+    lstdewinners<-lstdewinners[match(orden2,names(lstdewinners))]
+  } else {}
+  
+  if (is.null(tab$CompWinner)) {
+    Res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,TablebyTick=tbyticks)
+  } else {
+    Res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,
+              CompWinner=lstdewinners,TablebyTick=tbyticks)
+    
+  }
+  return(Res)
+  
+}
+
+###########################################################
+ER_Calculator<-function(Predictors, Response,Previous_CER,Ticks=5,WhichTicks=NULL,Function=Random.Forest.MP,Comps=10,crosval = "LOOCV",ERIterations=2,LassoIterations=2,TheoreticER=NULL,ErrorRateType="ER") {
+  
+  # Function to evaluate through Error rate the predictive capability of the Multipower package. 
+  # It encompasses "ClassificationErrorRate" and it is the fusion between the mentioned and ER_Adder
+  # Input: 
+  # Predictors: A list of different Omics Datasets and the Response matrix
+  # Response: A number indicating the response matrix included in Predictors
+  # Previous_CER: A previous result of class "ClassificationErrorRate" (CER) to be fusioned to the one that is going to be calculated
+  # Ticks: Number of segments (groups) of samples to evaluate. If NULL, the calculation is made on its own considering the TheoreticER
+  # WhichTicks: Vector of numbers of ticks to analyze in a second round
+  # Function: Modular function used to calculate the the error rate
+  # Comps: Number of componets to be calculated after each iteration. Just for PLSDA approach
+  # crosval: Type of cross validation to be applied, Leave-One-Out (LOOCV) or ten fold change (TenF)
+  # ERIterations: Number of iterations in which ER will be calculated
+  # LassoIterations: Number of iterations of the Lasso selection per each Error rate analysis
+  
+  # Output:
+  # TestedTicks: A vector of the number of evaluated samples
+  # Omics: A vector of the evaluated Omics
+  # A list of two lists:
+  # Minimums: A list of the minimum value of error rate, balanced (BER) or not (ER) obtained per each ten
+  #           component analysis. This is measured through three distance metrics to evaluate the 
+  #           classification performance of the model. Maximal distance (max.dist), distance to 
+  #           centroids (centroids) or Mahalanobis distance (Mahalanobis)
+  #           Thus, each table contains the results per each iteration at different subsets of samples
+  
+  # CompWinner: A list of the number of components in which the minimum value of error rate, 
+  #             balanced (BER) or not (ER) was obtainde per each iteration. This is measured through 
+  #             the three mentioned distance metrics to evaluate the classification performance 
+  #             of the model. Thus, each table contains the components per each iteration at different 
+  #             subsets of samples
+  
+  
+  if (! is.list(Predictors) ) {
+    stop("\\nOmics dataset must be a list with at least two elements")
+  }
+  ###########
+  # Y
+  Y<-t(as.matrix(Predictors[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  if (ncol(Y) != 1) {
+    stop("\\nResponse must be a single variable")
+  }
+  if (any(is.na(Y))) {
+    stop("\\nResponse must not contain missing values")
+  }
+  if (is.null(colnames(Y))) {
+    colnames(Y) = "Y"
+  }
+  if (is.null(rownames(Y))) {
+    rownames(Y) = 1:n
+  }
+  # Step1: Match the sample size
+  LosIndivs<- rownames(Y)
+  for (i in 1:length(Predictors)){
+    LosIndivs = intersect(LosIndivs, colnames(Predictors[[i]]))
+  }
+  #LosIndivs
+  print(paste("This analysis will be performed with",length(LosIndivs),"samples, since those are the ones repeated in all layers"))
+  
+  NewList<-Predictors
+  
+  #summary(NewList)
+  #rm(Predictors)
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,colnames(NewList[[i]]) %in% LosIndivs]
+  }
+  #sapply(Predictors, dim)
+  #sapply(NewList, dim)
+  
+  ###########
+  # Step2: Match the order
+  LosColnames<-colnames(NewList[[1]])
+  
+  for (i in 1:length(NewList)) {
+    NewList[[i]]<-NewList[[i]][,sort(LosColnames) ]
+  }
+  #sapply(NewList, dim)
+  
+  TestdeMatchTable<-unique(matrix(permutations(length(NewList)),ncol=2))
+  
+  for (i in 1:nrow(TestdeMatchTable)) {
+    a=TestdeMatchTable[i,1]
+    b=TestdeMatchTable[i,2]
+    
+    if (all(colnames(NewList[[a]])==colnames(NewList[[b]]))){
+      print(paste("Columns of lists",a,"and",b,"are equally sorted"))
+    } else{
+      print("The colnames are not equally sorted")
+    }
+  }
+  if (crosval=="LOOCV"){
+    valid="loo"
+  }
+  if (crosval=="TenF"){
+    valid="Mfold"
+  }
+  
+  # Y
+  Y<-t(as.matrix(NewList[[Response]], drop=FALSE))
+  if (is.character(Y[,1])) {
+    Ycita<-transform(Y, Type = as.numeric(Type))
+    Y<-Ycita
+    rm(Ycita)
+  }
+  
+  #########
+  Omics<-data.frame(Omics=names(NewList[-Response]))
+  
+  MinN<-round(length(table(as.factor(Y[,1]))) * 2, digits = 0)
+  MaxN<-nrow(Y)
+  Ngroups<-length(table(as.factor(Y[,1])))
+  
+  #vectTicks=NULL
+  if(!is.null(Ticks)) {
+    vectTicks<-round(seq(from=MinN,to = MaxN,length.out = Ticks),digits = 0)
+    setdeTicks = 1
+    DegreesOfFreedom<-Ticks-1
+  } else {
+    if (is.null(WhichTicks)) {
+      #print("Please insert which ticks you want to calculate")
+      #Ticks<- (MaxN-MinN)
+      setdeTicks<-seq(from=5,to = MaxN,by=2)
+      
+    } else {
+      vectTicks<-WhichTicks
+    }
+  }
+  if (length(setdeTicks)==1) {
+    ######
+    tab<-  ClassificationErrorRate (Predictors=Predictors, Response=length(Predictors),
+                                    Comps=Comps,crosval = crosval,ERIterations=ERIterations,
+                                    LassoIterations=LassoIterations,Ticks=NULL, 
+                                    WhichTicks=vectTicks,Function = Function)
+    ######
+  } else {
+    Rankk<-ranksas<-list()
+    for (sdt in 1:length(setdeTicks)){
+      numTicks<-setdeTicks[sdt]
+      vectTicks<-round(seq(from=MinN,to = MaxN,length.out = numTicks),digits = 0)
+      howmany<-length(vectTicks)
+      if (is.null(Previous_CER) ){
+        already=0
+      } else {
+        already<-length(Previous_CER$TestedTicks)
+        howmany<-already+2
+        vectTicks<-round(seq(from=MinN,to = MaxN,length.out = howmany),digits = 0)
+      }
+      
+      vectTicks<-c(setdiff(as.vector(vectTicks),as.vector(Previous_CER$TestedTicks) ))
+      vectTicks<-sort(sample(vectTicks,size = (howmany-already), replace = FALSE ))
+      ######
+      tab<-  ClassificationErrorRate (Predictors=Predictors, Response=length(Predictors),
+                                      Comps=Comps,crosval = crosval,ERIterations=ERIterations,
+                                      LassoIterations=LassoIterations,Ticks=NULL, 
+                                      WhichTicks=vectTicks,Function = Function)
+      
+      ####### Ahora Fusionar
+      if (is.null(Previous_CER)){
+        Previous_CER<-tab
+        allmeltedmodel<-Previous_CER$TablebyTick
+        #ro=dim(allmeltedmodel[[1]])[1]
+        
+      } else{
+        ttdticks<-sort(c(tab$TestedTicks,Previous_CER$TestedTicks))
+        
+        
+        if (length(tab$TablebyTick)==6) {
+          tbyticks2<-NULL
+          tbyticks<-list()
+          for (tod in 1:length(tab$TablebyTick)) {
+            namecito<-names(tab$TablebyTick[tod])
+            tbyticks2<-rbind(tab$TablebyTick[[tod]],Previous_CER$TablebyTick[[tod]])
+            tbyticks2<-tbyticks2[order(as.numeric(as.character(tbyticks2$variable))),]
+            rownames(tbyticks2)<-seq(1:dim(tbyticks2)[1])
+            tbyticks[namecito]<-list(tbyticks2)
+          }
+          orden<-as.numeric(as.character(tbyticks[[1]]$variable))
+          orden2<-paste(orden,"samples", sep=" ")
+          orden2
+        } else {
+          tbyticks<-rbind(tab$TablebyTick,Previous_CER$TablebyTick)
+          tbyticks<-tbyticks[order(as.numeric(as.character(tbyticks$variable))),]
+          rownames(tbyticks)<-seq(1:dim(tbyticks)[1])
+          
+          orden<-as.numeric(as.character(tbyticks$variable))
+          orden2<-paste(orden,"samples", sep=" ")
+          #orden2
+        } 
+        ######
+        om<-as.data.frame(tab$Omics, drop=F)
+        Omics<-om
+        ######
+        lstdeMins<-append(tab$Minimums,Previous_CER$Minimums)
+        lstdeMins<-lstdeMins[match(orden2,names(lstdeMins))]
+        
+        
+        if (!is.null(tab$CompWinner)) {
+          lstdewinners<-append(tab$Minimums,Previous_CER$Minimums)
+          lstdewinners<-lstdewinners[match(orden2,names(lstdewinners))]
+        } else {}
+        
+       #####
+        if (is.null(tab$CompWinner)) {
+          Previous_CER<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,TablebyTick=tbyticks)
+        } else {
+          Previous_CER<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,
+                             CompWinner=lstdewinners,TablebyTick=tbyticks)
+        }
+        
+        allmeltedmodel<-Previous_CER$TablebyTick
+        
+        
+      } # Cierre del else de Previous_CER
+      
+      if (is.null(TheoreticER) ) {
+        MinimumError=min(tbyticks$value)
+        SamplesEvaluated=SamplesRequired=as.numeric(as.character(
+                                        Previous_CER$TablebyTick$mahalanobis.dist_ER$variable[Previous_CER$TablebyTick$mahalanobis.dist_ER$value==min(Previous_CER$TablebyTick$mahalanobis.dist_ER$value)]  ))
+      } else{
+        MinimumError=TheoreticER 
+      }
+      
+      ### allmeltedmodel
+      
+      if (length(allmeltedmodel)==6){
+        allmeltedmodel<-allmeltedmodel$mahalanobis.dist_ER
+        ro=dim(allmeltedmodel)[1]
+      } else {
+        ro=dim(allmeltedmodel)[1]
+        } 
+      
+      #####
+      if (allmeltedmodel$value[ro-1]<allmeltedmodel$value[ro]) {
+        allmeltedmodel$value[ro]<-allmeltedmodel$value[ro-1]-abs(allmeltedmodel$StdDev[ro-1])
+      } else{}
+      
+      #############
+      
+      namecito<-paste(dim(allmeltedmodel)[1],"ticks", sep=" ")
+      DegreesOfFreedom<-length(Previous_CER$Minimums)-1
+      
+      fm1 <- lm(value ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      DESVESTprediction<-lm(StdDev ~ bs(as.numeric(as.character(variable)), degree = 1,df = DegreesOfFreedom), data = allmeltedmodel)
+      ht01 <- seq(min(as.numeric(as.character(allmeltedmodel$variable))),2000, length.out = 2000)
+      prediction<-as.data.frame(cbind(predict(fm1, data.frame(variable = ht01)),predict(DESVESTprediction, data.frame(variable = ht01))   )  );colnames(prediction)<-c("Prediction","STDpred")
+      ht01Table<-cbind(ht01,as.data.frame(prediction));colnames(ht01Table)<-c("ht","ErrorPred", "STDpred")
+      
+      NSampleMaxTable<-as.data.frame(ht01Table[ht01Table[,2]>=MinimumError,])
+      NSampleMax<-1+round(NSampleMaxTable$ht[dim(NSampleMaxTable)[1]])
+      NSampleMaxPosition<-as.numeric(rownames(NSampleMaxTable)[dim(NSampleMaxTable)[1]])
+      
+      NSampleMaxTable$EplusStd<-NSampleMaxTable$ErrorPred - NSampleMaxTable$STDpred
+      Theplusminustable<-as.data.frame(NSampleMaxTable[NSampleMaxTable[,4]>=MinimumError,])
+      Theplusminus<-round(Theplusminustable$ht[dim(Theplusminustable)[1]])
+      TheplusminusPosition<-as.numeric(rownames(Theplusminustable)[dim(Theplusminustable)[1]])
+      
+      SamplesEvaluated<-as.numeric(as.character(allmeltedmodel$variable[dim(allmeltedmodel)[1]]))
+      SamplesRequired<-round(NSampleMaxTable$ht[NSampleMaxPosition])
+      MOE<-paste("±",round(NSampleMax-Theplusminus))
+      
+      TERtable<-rbind(Min_ER=round(MinimumError,digits = 3),
+                      SamplesReq=SamplesRequired,
+                      MOE= MOE) 
+      ####################
+      rango<-seq(SamplesRequired-round(NSampleMax-Theplusminus),SamplesRequired+round(NSampleMax-Theplusminus), by=1)
+      ranksas<-list(rango)
+      Rankk[namecito]<-ranksas
+      
+      #TEST de STOP
+      if (length(Rankk)>2) {
+        print("Rankk llego a mas de dos")
+        testedfrags<-testedfragsSas<-list()
+        for (lngt in 1:length(Rankk)) {
+          namecito<-names(Rankk[lngt])
+          if (length(Rankk[[lngt]])<20) {
+            testedfragsSas<- list(Rankk[[lngt]])
+            testedfrags[namecito]<-testedfragsSas
+            
+          } else {}
+        }
+        if (length(testedfrags)>2){
+          print("testedfrags llego a mas de dos")
+          fin<-length(testedfrags)
+          intrsct<-intersect(intersect(testedfrags[[fin]],testedfrags[[fin-1]]),testedfrags[[fin-2]])
+          print(length(intrsct))
+          if(length(intrsct)>=3){
+            print(paste ("Entramos al Break en este momento",length(intrsct)),sep=" ")
+            
+            if (is.null(tab$CompWinner)) {
+              res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,TERtable=TERtable,TablebyTick=tbyticks)
+            } else {
+              res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,TERtable=TERtable,
+                        CompWinner=lstdewinners,TablebyTick=tbyticks)
+            }
+            return(res)
+            break
+          }else{}
+        } else {}
+      }
+      
+    } # Cierre de la longitud del set de ticks
+  } # Cierre del Else de set de ticks   
+  
+  # if (is.null(tab$CompWinner)) {
+  #   Res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,TablebyTick=tbyticks)
+  # } else {
+  #   Res<-list(TestedTicks=ttdticks,Omics=Omics,Minimums=lstdeMins,
+  #             CompWinner=lstdewinners,TablebyTick=tbyticks)
+  # }
+  
+  # return(Res)
+  
+}
+
+###########################################################
+###########################################################
+###########################################################
+
+.rslurm_func <- readRDS('Function.RDS')
+.rslurm_params <- readRDS('Parameters.RDS')
+.rslurm_id <- as.numeric(Sys.getenv('SLURM_ARRAY_TASK_ID'))
+.rslurm_istart <- .rslurm_id * {{{nchunk}}} + 1
+.rslurm_iend <- min((.rslurm_id + 1) * {{{nchunk}}} , length(.rslurm_params))
+.rslurm_result <- parallel::mclapply(X=.rslurm_params, FUN = .rslurm_func, mc.cores = {{{cpus_per_node}}})
+
+saveRDS(.rslurm_result, file = paste0('results_', .rslurm_id, '.RDS'))
