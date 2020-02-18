@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+#SBATCH --array=0-{{{max_node}}}
+#SBATCH --job-name={{{jobname}}}
+#SBATCH --output=slurm_%a.out
+#SBATCH --time={{{time}}}-00:00:00
+{{#flags}}
+#SBATCH --{{{name}}}
+{{/flags}}
+{{#options}}
+#SBATCH --{{{name}}}={{{value}}}
+{{/options}}
+module load R
+Rscript --vanilla SlurmCreator_Run.R
