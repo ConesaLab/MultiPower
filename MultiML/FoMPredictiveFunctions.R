@@ -142,7 +142,7 @@ Slurm_Creator<-function (Function, Parameters, jobname = NA, nodes = 2, cpus_per
   # Parameters.RDS: A .RDS file with all lists of datasets that will be used for the error rate calculation
   # SlurmCreator_Run.R: A .R file with the parameters to run the job
   # SlurmCreator_submit_sh: A .sh file that indicates all parameters that the cluster requires to perform the job
-
+  
   if (!is.function(Function)) {
     stop("first argument to slurm_apply should be a function")
   }
@@ -295,7 +295,7 @@ ClassificationErrorRate<- function (Predictors, Response=length(Predictors),Func
     if (is.null(WhichTicks)) {
       print("Please insert which ticks you want to calculate")
     } else {
-    vectTicks<-WhichTicks
+      vectTicks<-WhichTicks
     }
   }
   muestra<-seq(1:length(vectTicks))
@@ -630,6 +630,7 @@ PLSDA.MP<-function (X,Y,XLasso, YLasso, LassoIterations,...) {
                             progressBar = FALSE, auc = TRUE, nrepeat = 1) ,silent=TRUE) 
     ##
     #TableMeans<-table<-NULL
+    Mins<-ComponentWinner<-NULL
     if (class(perf.plsda) == "try-error") {
       preMins<-matrix(1,nrow=6,ncol=1)
       colnames(preMins)<-iter;rownames(preMins)<-c("max.dist_ER","max.dist_BER","centroids.dist_ER","centroids.dist_BER","mahalanobis.dist_ER","mahalanobis.dist_BER")
@@ -1206,6 +1207,7 @@ RequiredtimeTest<-function (Predictors, Response, Comps = 10, Function,crosval =
   # EstimatedTime: A table of the estimated time that the process will last showed in different metrics (seconds, minutes, hours, or days).
 
   components=Comps
+  #Mins=NULL
   print("Calculating the estimated time required for the classification analysis")
   Omics<-data.frame(Omics=names(Predictors[-Response]))
   Omics2<-paste(Omics$Omics,collapse="_")
@@ -1609,7 +1611,6 @@ ER_Calculator<-function(Predictors, Response,Previous_CER=NULL,Ticks=5,WhichTick
   }
   })
 }
-                
 
 # END 
 
