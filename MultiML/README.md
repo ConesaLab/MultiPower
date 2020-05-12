@@ -12,8 +12,7 @@ The MultiML method employs a multi-omic pilot data to estimate the minimum sampl
 ## Getting Started ##
 
 The MultiML method is available in:
-
-https://bitbucket.org/ConesaLab/multiml.git. 
+https://github.com/ConesaLab/MultiPower/blob/master/MultiML
 https://leobalzano@bitbucket.org/leobalzano/multiml.git
 
 ## Required R libraries: ##
