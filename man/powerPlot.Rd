@@ -6,7 +6,7 @@ Power plots.
 }
 \description{
 Plotting statistical power versus sample size per omic from optimal sample size results.
-If pilot data available, also plots statistical versus dispersion percentiles.
+and statistical power versus Cohen's d cutoffs (in percentiles).
 }
 \usage{
 powerPlot(parameters, optimalSampleSize, omicCol = NULL)
@@ -14,7 +14,8 @@ powerPlot(parameters, optimalSampleSize, omicCol = NULL)
 %- maybe also 'usage' for other objects documented here.
 \arguments{
   \item{parameters}{
-List with as many elements as omic data types. For each omic, each element of this list is another list containing the different parameters needed to compute power which, in this case, must be set by the user. See \code{MultiPower} results for more details.
+List with as many elements as omic data types. For each omic, each element of this list is another list containing the different parameters needed to compute power. 
+See \code{MultiPower} results for more details.
 }
   \item{optimalSampleSize}{
 R object containing the results of \code{optimalRep}.
