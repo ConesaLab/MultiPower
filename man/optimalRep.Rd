@@ -7,7 +7,7 @@ Estimation of optimal sample size.
 Estimation of the optimal sample size when pilot multi-omic data sets are not available.
 }
 \usage{
-optimalRep(parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0.05, alpha = 0.05, cost = 1, equalSize = TRUE, max.size = 200)
+optimalRep(parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0.05, cost = 1, equalSize = TRUE, max.size = 200)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -21,11 +21,7 @@ The minimum power that must be achieved for each omic. It must be a vector with 
 The minimum average power that must be globally achieved. By default, averagePower = 0.85.
 }
   \item{fdr}{
-False Discovery Rate level to be used. It is the significance level after multiple testing correction. By default, fdr = 0.05. If no multiple testing correction is to be applied, this argument must be set to NULL and then alpha argument is required.
-}
-  \item{alpha}{
-Significance level to be used only when multiple testing correction is not to be applied (fdr = NULL). By default, alpha = 0.05.
-}
+False Discovery Rate level to be used. It is the significance level after multiple testing correction. By default, fdr = 0.05.}
   \item{cost}{
 The cost to generate a replicate (a sample) for each omic. It must be a vector with length equal to the number of omics. If it is a single number, this same number will be used for all the omics. This argument will only be used when a different sample size per omic is allowed. By default, cost = 1 (which means that all the omics will be assumed to have the same cost).
 }
@@ -62,30 +58,8 @@ Sonia Tarazona; David Gómez-Cabrero
 \code{\link{MultiPower}}
 }
 \examples{
-myomics = c("RNA-seq", "miRNA-seq",  "RRBS-seq")
-mytype = c(1, 1, 2)
-sdValue = c(2.5,3.7,0.7)  # pooled standard deviation
-p1omics = c(0.4, 0.2, 0.1) # expected proportion of DE features
-d0 = 1
-minFC0 = c(1.5, 1.5, NA) # fold-change to be detected in DE features
-meanCounts0 = c(20, 15, NA) # mean counts of DE features
-M = c(12000, 500, 600000) # number of omic features
-myparam = vector("list", length = 3)  # define parameters object
-names(myparam) = myomics
-for (i in 1:length(myparam)) {
-  if (mytype[i] == 1) {
-    disp = max((sdValue[i]^2 - meanCounts0[i]) / meanCounts0[i]^2, 0.0001)
-  }
-  if (mytype[i] == 2) { disp = sdValue[i] }
-  myparam[[i]] = list("type" = mytype[i], "allDispersions" = NULL,
-                      "dispersion" = disp,"p1" = p1omics[i], "d" = d0,
-                      "delta" = d0*sdValue[i], "minFC" = minFC0[i],
-                      "meanCounts" = meanCounts0[i], "m" = M[i],
-                      "m1" = round(M[i]*p1omics[i], 0), "alld" = NULL,
-                      "dispPerc" = 75, "w" = 1)
-}
 optimalSS = optimalRep(parameters = myparam, omicPower = 0.6,
-averagePower = 0.8, fdr = 0.05, alpha = 0.05,
+averagePower = 0.8, fdr = 0.05, 
 cost = 1, equalSize = TRUE, max.size = 30)
 optimalSS$n  # optimal sample size
 }
