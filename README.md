@@ -5,7 +5,7 @@
 The MultiPower R method performs statistical power studies for multi-omics experiments, 
 and is designed to assist users in experimental design as well as in the evaluation of already-generated multi-omics datasets. 
 More details on the method can be found in our manuscript [[1]](#1) and in the 
-[MultiPower User’s Guide](https://github.com/ConesaLab/MultiPower/blob/master/MultiPower_UsersGuide.pdf).
+[MultiPower User’s Guide](https://github.com/ConesaLab/MultiPower/blob/master/MultiPowerUsersGuide_v1.pdf).
 
 MultiPower is available as an R package, and can be installed as follows:
 
@@ -16,48 +16,21 @@ devtools::install_github(“ConesaLab/MultiPower”)
 
 ### Installing MultiPower dependencies
 
-Some dependencies are required before running MultiPower. The following can be installed from R via 
+Some dependencies are required before running MultiPower that can be installed from R via 
 `install.packages()` and loaded with `library()`:
 
-- slam
-- Lpmodeler
-- Rsymphony
+- FDRsampsize
 
-MultiPower also requires the *RnaSeqSampleSize* package, which can be installed following 
-the instructions in the corresponding [Bioconductor repository](https://bioconductor.org/packages/release/bioc/html/RnaSeqSampleSize.html).
 
-**NOTE for Linux users:** when working on a Linux system, installing *Rsymphony* will require some additional steps. 
-First, the last version of SYMPHONY needs to be installed:
+### WARNING
 
-```
-$ svn checkout https://projects.coin-or.org/svn/SYMPHONY/releases/5.6.16
-SYMPHONY-5.6.16
-$ cd SYMPHONY-5.6.16
-$ ./configure
-$ make
-$ make install
+The option of estimating different sample sizes for each omic is not available at this
+moment due to deprecated R packages that are required. This issue will be fixed soon. Thank
+you for your patience and sorry for the inconvenience.
 
-```
 
-Additional required libraries can then be installed as follows:
 
-```
-$ sudo apt-get install coinor-libcgl-dev coinor-libclp-dev
-coinor-libcoinutils-dev coinor-libosi-dev
-$ sudo apt-get install coinor-libsymphony-dev
-$ sudo apt-get install autotools-dev
-```
 
-Next, download the R package from the [CRAN repository](https://cran.r-project.org/src/contrib/Rsymphony_0.1-26.tar.gz) 
-and install from R:
- 
-```
-install.packages(“Rsymphony_0.1-26.tar.gz”, repos = NULL)
-```
-
-After installation is complete, please refer to MultiPower’s 
-[User Guide](https://github.com/ConesaLab/MultiPower/blob/master/MultiPower_UsersGuide.pdf) for instructions on 
-how to use the different functions included in the package.
 
 ## MultiML
 
