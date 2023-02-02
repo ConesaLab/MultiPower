@@ -1,7 +1,7 @@
 Package: MultiPower
 Type: Package
 Title: Estimation of sample size in multi-omic experiments
-Version: 0.5.0
+Version: 1.0
 Author: Sonia Tarazona; David Gómez-Cabrero
 Maintainer: Sonia Tarazona <sotacam@gmail.com>
 Description: In multi-omic experiments, MultiPower estimates the sample size needed to achieve a given statistical power per omic and globally. Parameters require to estimate power can be either set by users or estimated from provided pilot data (recommended). MultiPower accepts count data, normally distributed data or binary data.
