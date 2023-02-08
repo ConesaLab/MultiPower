@@ -64,8 +64,15 @@ power.binary = function(n, sig.level=0.05, p1_p2, p1) {
 
 ## Two-group comparison
 paramEst = function (data, groups, type = 1) {
-
+  
   # type = 1 (counts), 2 (gaussian), 3 (binary variables: 0/1 or FALSE/TRUE)
+  
+  sd0 = apply(data, 1, sd)
+  sd0 = which(sd0 == 0)
+  if (length(sd0) > 0) {
+    print(paste0(length(sd0), " constant features are to be removed from the analysis."))
+    data = data[-sd0,]
+  }
 
   # Number of features
   M = nrow(data)
