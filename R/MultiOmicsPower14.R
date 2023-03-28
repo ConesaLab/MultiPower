@@ -6,7 +6,7 @@
 
 ## By Sonia Tarazona and David Gomez-Cabrero
 ## 05-Oct-2017
-## Last modified: February-2023
+## Last modified: March-2023
 # 
 
 
@@ -257,9 +257,9 @@ optimalRep = function (parameters, omicPower = 0.6, averagePower = 0.85, fdr = 0
 
     sss = optiSSnotEqual(parameters, fdr, cost, max.size, omicPower, averagePower, 
                          null.effect)
-    n2 = as.numeric(sss$summary[,"SampleSize"])
-    allPowers = as.numeric(sss$summary[,"Power"])
-    names(allPowers) = names(n2) = sss$summary[,"Omic"]
+    n2 = as.numeric(sss[,"SampleSize"])
+    allPowers = as.numeric(sss[,"Power"])
+    names(allPowers) = names(n2) = sss[,"Omic"]
 
     return(list("n0" = NA, "n" = n2, "finalPower" = allPowers, "fdr" = fdr, 
                 "omicPower" = omicPower, "averagePower" = averagePower, "cost" = cost))
@@ -421,10 +421,15 @@ optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100,
   # coeffs power;  
   # constraint sum(vars) = 1 (to have only 1 sample size); coeffs average power
   myC = NULL  # coeffs of objective function
-  A1 = A3 = matrix(0, nrow = K, ncol = num.var)
-  A2 = matrix(0, nrow = 1, ncol = num.var)
+  # A1: coeffs of power per omic
+  # A3: sum(Zij) = 1 for each omic i
+  A1 = A3 = matrix(0, nrow = K, ncol = num.var) 
+  # A2: coeffs for average power for all omics
+  A2 = NULL
   
   for (k in 1:K) {
+    # coef.power --> A1, A2
+    # coef1 --> A3
     coef.power = coef1 = rep(0, num.var)
 
     for (i in 2:max.size[k]) {
@@ -432,10 +437,10 @@ optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100,
 
       # power of each (omic, sample size)
       my.power = getPower(parameters[[k]], power = NULL, n = i, fdr = fdr,
-                          null.effect = null.effect)
+                          null.effect = null.effect, max.n = max.size)
 
       # coeff average power
-      A2 = c(my.A4, my.power)
+      A2 = c(A2, my.power)
 
       if (k == 1) {   
         coef.power[i-1] = my.power
@@ -448,62 +453,41 @@ optiSSnotEqual = function (parameters, fdr = 0.05, cost = 1, max.size = 100,
       }
 
     }
-    my.A2 = rbind(my.A2, coef.power)
-    my.A3 = rbind(my.A3, coef1)
+    A1[k,] = coef.power
+    A3[k,] = coef1
   }
+  
+  A2 = matrix(A2, nrow = 1, byrow = TRUE)
+  
+  myA = rbind(A1, A2, A3)
+  
+  mydir = c(rep(">=", K+1), rep("=", K))
+  
+  myRHS = c(omicPower, K*averagePower, rep(1,K))
 
 
-  ##### DEFINITION OF THE PROBLEM
+  #### SOLUTION OF THE PROBLEM
+  mysol = lp(direction = "min", objective.in = myC, const.mat = myA,
+             const.dir = mydir, const.rhs = myRHS, all.int = TRUE, all.bin = TRUE)
+  
+  if (mysol$status == 2) {
+    
+    stop("No feasible solution was found for these requirements.")
+    
+  } else {
+    
+    myvars = unlist(sapply(1:K, function (k) paste(names(parameters)[k], 
+                                                   2:max.size[k], sep = "=")))
+    mysolution = myvars[which(mysol$solution == 1)]
+    mysolution = as.data.frame(do.call("rbind", strsplit(mysolution, "=")), 
+                               stringsAsFactors = FALSE)
+    colnames(mysolution) = c("Omic", "SampleSize")
+    mysolution = data.frame(mysolution, "OmicCost" = cost*as.numeric(mysolution[,2])*2,
+                            "Power" = diag(A1[,mysol$solution == 1]))
 
-  prob<-newProblem(max=F)
-
-  #### Add variables
-  #my.a
-  for(i in 1:length(my.a))
-  {
-    prob <- addVariable(prob, "B", my.a[i])
+    return(mysolution)
+    
   }
-
-  #### Add inequalities
-  #A2 = my.A2
-  #b2 = min.power
-
-  for(i in 1:nrow(my.A2))
-  {
-    prob <- addConstraint(prob, sense=">=", rhs = omicPower[i],coefs=my.A2[i,])
-  }
-
-  # constraint average power
-  prob <- addConstraint(prob, sense=">=", rhs = averagePower*K, coefs = my.A4)
-
-
-  #### Add equalities
-  #A3 = my.A3
-  b3 = rep(1,nrow(my.A3))
-
-  for(i in 1:nrow(my.A3))
-  {
-    prob <- addConstraint(prob, sense="==", rhs=b3[i],coefs=my.A3[i,])
-  }
-
-  #### Check consistency
-  # print(prob)
-  # print(checkDims(prob))
-
-
-  #### SOLUTION
-  mysol = mipSolve(prob)
-
-  myvars = unlist(sapply(1:K, function (k) paste(names(parameters)[k], 2:max.size[k], sep = "=")))
-  mysolution = myvars[which(mysol$solution == 1)]
-  mysolution = as.data.frame(do.call("rbind", strsplit(mysolution, "=")), stringsAsFactors = FALSE)
-  colnames(mysolution) = c("Omic", "SampleSize")
-  mysolution = data.frame(mysolution, "OmicCost" = cost*as.numeric(mysolution[,2])*2,
-                          "Power" = diag(my.A2[,mysol$solution == 1]))
-
-  mysol$summary = mysolution
-
-  return(mysol)
 
 }
 
@@ -650,17 +634,18 @@ postPowerPlot = function(postResults, equalSize, omicCol = NULL, max.size = 10) 
 
   } else {
 
-    fff = sapply(1:nrow(postResults$SampleSize), function (i) { fff = approxfun(postResults$SampleSize[i,], postResults$d)
+    fff = sapply(1:ncol(postResults$SampleSize), function (i) { fff = approxfun(postResults$SampleSize[,i], postResults$d)
                                                                 return(fff(max.size)) })
     myD = round(max(fff, na.rm = TRUE),2)
 
-    matplot(postResults$d, t(postResults$SampleSize), type = "l", lwd = 2, col = omicCol, lty = 1,
+    matplot(postResults$d, postResults$SampleSize, type = "l", lwd = 2, col = omicCol, lty = 1,
             xlab = "Cohen's d", ylab = "Number of replicates", main = "Sample size vs Cohen's d",
             ylim = c(2, max(postResults$SampleSize)))
-    legend("topright", rownames(postResults$SampleSize), lwd = 2, col = omicCol, bty = "n")
+    legend("topright", colnames(postResults$SampleSize), lwd = 2, col = omicCol, bty = "n")
     arrows(x0 = 0, y0 = max.size, x1 = myD, y1 = max.size, lty = 2, col = 1)
     arrows(x0 = myD, y0 = max.size, x1 = myD, y1 = 2, lty = 2, col = 1)
-    text(min(postResults$d)+0.5, max(postResults$SampleSize, na.rm = TRUE), paste0("Cohen's d = ", myD), col = 1)
+    text(mean(postResults$d), max(postResults$SampleSize, na.rm = TRUE), 
+         paste0("Cohen's d = ", myD), col = 1, adj = 0.5)
   }
 
   mypar = par()
@@ -733,7 +718,8 @@ MultiGroupPower = function(data, groups, type, comparisons = NULL,
   print(output$GlobalSummary)
   
   
-  if (summaryPlot) MultiCompaPlot(multiOutput = output, omicCol = omicCol, equalSize = equalSize, legendLoc = "bottom")
+  if (summaryPlot) MultiCompaPlot(multiOutput = output, omicCol = omicCol, equalSize = equalSize, 
+                                  legendLoc = "bottom")
   
   return(output)
   
