@@ -5,7 +5,7 @@
 The MultiPower R method performs statistical power studies for multi-omics experiments, 
 and is designed to assist users in experimental design as well as in the evaluation of already-generated multi-omics datasets. 
 More details on the method can be found in our manuscript [[1]](#1) and in the 
-[MultiPower User’s Guide](https://github.com/ConesaLab/MultiPower/blob/master/MultiPowerUsersGuide_v1.pdf).
+[MultiPower User’s Guide](https://github.com/ConesaLab/MultiPower/blob/master/MultiPowerUsersGuide_v2.pdf).
 
 MultiPower is available as an R package, and can be installed as follows:
 
