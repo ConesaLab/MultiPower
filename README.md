@@ -20,14 +20,7 @@ Some dependencies are required before running MultiPower that can be installed f
 `install.packages()` and loaded with `library()`:
 
 - FDRsampsize
-
-
-### WARNING
-
-The option of estimating different sample sizes for each omic is not available at this
-moment due to deprecated R packages that are required. This issue will be fixed soon. Thank
-you for your patience and sorry for the inconvenience.
-
+- lpSolve
 
 
 
