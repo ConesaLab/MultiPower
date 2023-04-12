@@ -4,7 +4,7 @@
 Optimal sample size estimation and power study.
 }
 \description{
-MultiPower estimates the optimal sample size for a multi-omic experiment when pilot multi-omic data sets are available to estimate the parameters required to compute power. An optimization problem is solved in order to achieve the desired power while minimizing the cost of the experiment.
+MultiPower computes the optimal sample size for a multi-omic experiment when pilot multi-omic data sets are available for estimating the parameters required to compute power. An optimization problem is solved in order to achieve the desired power while minimizing the cost of the experiment.
 }
 \usage{
 MultiPower(data, groups, type, omicPower = 0.6, averagePower = 0.85, null.effect = 0,
